@@ -65,6 +65,10 @@ function apiRoomPath(roomId: string) {
   return `/api/room/${encodeURIComponent(roomId)}`;
 }
 
+function apiRoomEventsPath(roomId: string) {
+  return `/api/room/${encodeURIComponent(roomId)}/events`;
+}
+
 async function fetchRoomStateFromServer(roomId: string) {
   const response = await fetch(apiRoomPath(roomId), {
     method: "GET",
@@ -324,6 +328,10 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
   }, [role, roomId, sendStateToServer]);
 
   useEffect(() => {
+    let disposed = false;
+    let fallbackInterval: number | null = null;
+    let eventSource: EventSource | null = null;
+
     const poll = async () => {
       try {
         const remote = await fetchRoomStateFromServer(roomId);
@@ -333,12 +341,59 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
       }
     };
 
-    const interval = window.setInterval(() => {
+    const startFallbackPolling = () => {
+      if (fallbackInterval !== null) {
+        return;
+      }
+
+      fallbackInterval = window.setInterval(() => {
+        void poll();
+      }, 1_000);
       void poll();
-    }, 1_000);
+    };
+
+    if (typeof window === "undefined" || !("EventSource" in window)) {
+      startFallbackPolling();
+      return () => {
+        if (fallbackInterval !== null) {
+          window.clearInterval(fallbackInterval);
+          fallbackInterval = null;
+        }
+      };
+    }
+
+    // Keep polling active even with SSE as a safety net for buffered/proxy-delayed streams.
+    startFallbackPolling();
+    eventSource = new EventSource(apiRoomEventsPath(roomId));
+
+    eventSource.addEventListener("room_state", (event) => {
+      if (disposed) {
+        return;
+      }
+
+      try {
+        const remote = JSON.parse((event as MessageEvent<string>).data) as RoomState;
+        syncRemoteIfNewer(remote);
+      } catch {
+        // Ignore malformed events.
+      }
+    });
+
+    eventSource.onerror = () => {
+      if (!disposed) {
+        void poll();
+      }
+    };
 
     return () => {
-      window.clearInterval(interval);
+      disposed = true;
+      if (fallbackInterval !== null) {
+        window.clearInterval(fallbackInterval);
+        fallbackInterval = null;
+      }
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, [roomId, syncRemoteIfNewer]);
 
