@@ -1,7 +1,12 @@
 import type { Route } from "./+types/host-lobby";
 import { Link } from "react-router";
 
-import { ActionLink, PlayerChip, Ribbon } from "~/components/game-primitives";
+import { PlayerChip } from "~/components/player-chip";
+import { Ribbon } from "~/components/ribbon";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { useRoomState } from "~/lib/game-engine";
 import { mockPlayers, preloadChecks } from "~/lib/mock-room";
 
 export function meta({}: Route.MetaArgs) {
@@ -9,48 +14,72 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function HostLobby({ params }: Route.ComponentProps) {
+  const roomId = params.roomId;
+  const room = useRoomState(roomId, "host");
+
   return (
     <main className="jam-page">
-      <section className="jam-stage jam-stage-wide">
+      <section className="jam-stage w-full max-w-5xl">
         <Ribbon>Host Lobby</Ribbon>
 
-        <p className="jam-subtitle">Room Code: <strong>{params.roomId}</strong></p>
+        <p className="mt-4 text-center text-2xl font-bold text-[#2e2e79]">
+          Room Code: <span className="text-[#d84837]">{roomId}</span>
+        </p>
 
-        <div className="jam-layout-grid">
-          <article className="jam-panel-card">
-            <h2>Players Ready</h2>
-            <ul className="jam-chip-row" aria-label="Ready players">
-              {mockPlayers.map((player) => (
-                <PlayerChip key={player.id} player={player} />
-              ))}
-            </ul>
-          </article>
-
-          <article className="jam-panel-card">
-            <h2>Preload Status</h2>
-            <ul className="jam-check-list" aria-label="Preload checklist">
-              {preloadChecks.map((check) => (
-                <li key={check} className="jam-check-item">
-                  <span aria-hidden>OK</span> {check}
-                </li>
-              ))}
-            </ul>
-            <p className="jam-note">All players synced. Ready to start.</p>
-          </article>
+        <div className="mt-4 flex justify-center">
+          <Badge>{room.state.lifecycle.toUpperCase()}</Badge>
         </div>
 
-        <div className="jam-actions">
-          <ActionLink to={`/play/game/${params.roomId}`} tone="success">
-            Start Round 1
-          </ActionLink>
-          <ActionLink to="/" tone="neutral">
-            Back to Landing
-          </ActionLink>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Players</CardTitle>
+              <CardDescription>Split player screens can now join independently.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="flex flex-wrap justify-center gap-2" aria-label="Players in room">
+                {mockPlayers.map((player) => (
+                  <PlayerChip key={player.id} player={player} />
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Preload Checks</CardTitle>
+              <CardDescription>Static for now, will become live readiness in Step 6.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {preloadChecks.map((item) => (
+                <p key={item} className="flex items-center gap-2 text-sm font-bold text-[#1f1f55]">
+                  <Badge variant="success">OK</Badge>
+                  {item}
+                </p>
+              ))}
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="jam-inline-links">
-          <Link to={`/play/timeline/${params.roomId}`}>Timeline Screen</Link>
-          <Link to={`/results/${params.roomId}`}>Results Screen</Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Button variant="success" size="lg" onClick={room.controls.startGame}>
+            Start Game
+          </Button>
+          <Button asChild variant="secondary" size="lg">
+            <Link to={`/host/game/${roomId}`}>Open Host Game</Link>
+          </Button>
+          <Button variant="outline" onClick={room.controls.resetLobby}>
+            Reset Room
+          </Button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap justify-center gap-3">
+          <Button asChild variant="outline">
+            <Link to={`/play/lobby/${roomId}`}>Open Player Lobby</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/host/setup">Back To Setup</Link>
+          </Button>
         </div>
       </section>
     </main>

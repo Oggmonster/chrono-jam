@@ -1,0 +1,147 @@
+import { type FormEvent, useEffect, useState } from "react";
+import type { Route } from "./+types/host-setup";
+import { Link, useNavigate, useSearchParams } from "react-router";
+
+import { Ribbon } from "~/components/ribbon";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Input } from "~/components/ui/input";
+import { generateRoomCode, normalizeRoomCode } from "~/lib/room-code";
+
+const spotifyTokenKey = "chronojam:spotify-access-token";
+const spotifyTokenExpiryKey = "chronojam:spotify-access-token-expiry";
+
+export function meta({}: Route.MetaArgs) {
+  return [{ title: "ChronoJam | Host Setup" }];
+}
+
+export default function HostSetup() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [roomCode, setRoomCode] = useState(generateRoomCode());
+  const [token, setToken] = useState("");
+  const [statusText, setStatusText] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const saved = window.localStorage.getItem(spotifyTokenKey);
+    if (saved) {
+      setToken(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const oauthToken = searchParams.get("spotify_access_token");
+    const oauthExpiry = searchParams.get("spotify_expires_in");
+    const oauthError = searchParams.get("spotify_error");
+    const oauthRoom = searchParams.get("room");
+
+    if (oauthRoom) {
+      setRoomCode(oauthRoom);
+    }
+
+    if (oauthError) {
+      setStatusText(`Spotify auth error: ${oauthError}`);
+      return;
+    }
+
+    if (!oauthToken) {
+      return;
+    }
+
+    setToken(oauthToken);
+    window.localStorage.setItem(spotifyTokenKey, oauthToken);
+
+    if (oauthExpiry) {
+      const expiresAt = Date.now() + Number(oauthExpiry) * 1000;
+      window.localStorage.setItem(spotifyTokenExpiryKey, String(expiresAt));
+      setStatusText("Spotify connected. Access token saved.");
+    } else {
+      setStatusText("Spotify connected. Access token saved.");
+    }
+  }, [searchParams]);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const normalized = normalizeRoomCode(roomCode) || generateRoomCode();
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(spotifyTokenKey, token.trim());
+      if (!window.localStorage.getItem(spotifyTokenExpiryKey)) {
+        window.localStorage.setItem(spotifyTokenExpiryKey, String(Date.now() + 60 * 60 * 1000));
+      }
+    }
+
+    navigate(`/host/lobby/${normalized}`);
+  };
+
+  const connectHref = `/auth/spotify/start?room=${encodeURIComponent(normalizeRoomCode(roomCode) || "")}`;
+
+  return (
+    <main className="jam-page">
+      <section className="jam-stage w-full max-w-3xl">
+        <Ribbon>Host Setup</Ribbon>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Spotify Premium Host</CardTitle>
+            <CardDescription>
+              ChronoJam host playback uses the Spotify Web Playback SDK.
+            </CardDescription>
+            <Badge variant="warning" className="w-fit">
+              Required scopes: streaming, user-modify-playback-state, user-read-playback-state
+            </Badge>
+            {statusText ? <Badge variant="success" className="w-fit">{statusText}</Badge> : null}
+          </CardHeader>
+
+          <CardContent>
+            <form className="grid gap-4" onSubmit={submit}>
+              <label className="grid gap-2 text-sm font-bold text-[#32277e]">
+                Room code
+                <Input
+                  value={roomCode}
+                  onChange={(event) => setRoomCode(event.target.value)}
+                  placeholder="8372"
+                  maxLength={8}
+                  required
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm font-bold text-[#32277e]">
+                Spotify access token
+                <Input
+                  type="password"
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  placeholder="Paste OAuth access token"
+                />
+              </label>
+
+              <div className="mt-2 flex flex-wrap gap-3">
+                <Button asChild variant="default" size="lg">
+                  <a href={connectHref}>Connect Spotify</a>
+                </Button>
+                <Button type="submit" variant="success" size="lg">
+                  Continue To Lobby
+                </Button>
+                <Button asChild variant="secondary">
+                  <Link to="/">Back</Link>
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </section>
+    </main>
+  );
+}
+

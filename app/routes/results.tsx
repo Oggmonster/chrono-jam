@@ -1,51 +1,63 @@
 import type { Route } from "./+types/results";
 import { Link } from "react-router";
 
-import { ActionLink, Ribbon } from "~/components/game-primitives";
-import { leaderboard, mockPlayers, roundAnswer } from "~/lib/mock-room";
+import { Ribbon } from "~/components/ribbon";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { useRoomState } from "~/lib/game-engine";
+import { leaderboard, mockPlayers } from "~/lib/mock-room";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "ChronoJam | Round Results" }];
+  return [{ title: "ChronoJam | Results" }];
 }
 
 export default function Results({ params }: Route.ComponentProps) {
+  const roomId = params.roomId;
+  const room = useRoomState(roomId, "player");
+
   return (
     <main className="jam-page">
-      <section className="jam-stage jam-stage-wide">
+      <section className="jam-stage w-full max-w-4xl">
         <Ribbon>Round Results</Ribbon>
 
-        <p className="jam-subtitle">
-          {roundAnswer.title} by {roundAnswer.artist} ({roundAnswer.year})
+        <p className="mt-4 text-center text-xl font-bold text-[#2e2e79]">
+          {room.round.title} by {room.round.artist} ({room.round.year})
         </p>
 
-        <article className="jam-panel-card">
-          <ol className="jam-score-list" aria-label="Round points">
-            {leaderboard.map((entry) => {
-              const player = mockPlayers.find(({ id }) => id === entry.playerId)!;
+        <Card className="mt-5">
+          <CardHeader>
+            <CardTitle>Leaderboard (Mock Points)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {leaderboard.map((entry, index) => {
+              const player = mockPlayers.find(({ id }) => id === entry.playerId);
+              if (!player) {
+                return null;
+              }
+
               return (
-                <li key={entry.playerId} className="jam-score-row jam-score-row-highlight">
-                  <span className="jam-score-player">
-                    {entry.place} {player.name}
+                <div
+                  key={entry.playerId}
+                  className="flex items-center justify-between rounded-xl border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2"
+                >
+                  <span className="font-extrabold text-[#223f94]">
+                    {index + 1}. {player.name}
                   </span>
-                  <strong>+{entry.points}</strong>
-                </li>
+                  <Badge variant={index === 0 ? "success" : "default"}>+{entry.points}</Badge>
+                </div>
               );
             })}
-          </ol>
-        </article>
+          </CardContent>
+        </Card>
 
-        <div className="jam-actions">
-          <ActionLink to={`/play/game/${params.roomId}`} tone="success">
-            Next Round
-          </ActionLink>
-          <ActionLink to={`/host/lobby/${params.roomId}`} tone="neutral">
-            Back to Lobby
-          </ActionLink>
-        </div>
-
-        <div className="jam-inline-links">
-          <Link to="/">Landing Screen</Link>
-          <Link to={`/play/timeline/${params.roomId}`}>Timeline Preview</Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Button asChild variant="success">
+            <Link to={`/host/game/${roomId}`}>Next Round (Host)</Link>
+          </Button>
+          <Button asChild variant="secondary">
+            <Link to={`/play/game/${roomId}`}>Back To Player Game</Link>
+          </Button>
         </div>
       </section>
     </main>
