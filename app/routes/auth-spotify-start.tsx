@@ -7,9 +7,8 @@ import {
   getSpotifyRedirectUri,
   getSpotifyScopeParam,
   randomState,
+  spotifyStateCookieName,
 } from "~/lib/spotify-oauth.server";
-
-const stateCookieName = "chronojam_spotify_state";
 
 export async function loader({ request }: Route.LoaderArgs) {
   let clientId: string;
@@ -37,7 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return redirect(authorizeUrl.toString(), {
     headers: {
-      "Set-Cookie": buildStateCookie(stateCookieName, state, request),
+      "Set-Cookie": buildStateCookie(spotifyStateCookieName, state, request),
     },
   });
 }
@@ -45,4 +44,3 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function AuthSpotifyStart() {
   return null;
 }
-

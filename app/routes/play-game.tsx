@@ -10,7 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { Progress } from "~/components/ui/progress";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
-import { mockPlayers } from "~/lib/mock-room";
+import { usePlayerPresence } from "~/lib/player-presence";
+import { getPlayerSession } from "~/lib/player-session";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Game" }];
@@ -34,6 +35,8 @@ function phaseInstruction(phase: string) {
 export default function PlayGame({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const room = useRoomState(roomId, "player");
+  const playerSession = useMemo(() => getPlayerSession(roomId), [roomId]);
+  usePlayerPresence(playerSession, room.controls);
 
   const progress = useMemo(() => {
     if (room.state.lifecycle !== "running") {
@@ -95,10 +98,13 @@ export default function PlayGame({ params }: Route.ComponentProps) {
           </CardHeader>
           <CardContent>
             <ul className="flex flex-wrap justify-center gap-2">
-              {mockPlayers.map((player) => (
+              {room.state.participants.map((player) => (
                 <PlayerChip key={player.id} player={player} />
               ))}
             </ul>
+            {room.state.participants.length === 0 ? (
+              <p className="text-center text-sm font-semibold text-[#51449e]">No players connected yet.</p>
+            ) : null}
           </CardContent>
         </Card>
 

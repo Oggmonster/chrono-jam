@@ -2,14 +2,14 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/auth-spotify-callback";
 
 import {
+  buildRefreshCookie,
   clearStateCookie,
   getSpotifyClientId,
   getSpotifyClientSecret,
   getSpotifyRedirectUri,
   parseCookieValue,
+  spotifyStateCookieName,
 } from "~/lib/spotify-oauth.server";
-
-const stateCookieName = "chronojam_spotify_state";
 
 type TokenResponse = {
   access_token: string;
@@ -37,7 +37,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const code = callbackUrl.searchParams.get("code");
   const room = callbackUrl.searchParams.get("room");
 
-  const expectedState = parseCookieValue(request.headers.get("Cookie"), stateCookieName);
+  const expectedState = parseCookieValue(request.headers.get("Cookie"), spotifyStateCookieName);
   if (!code || !state || !expectedState || state !== expectedState) {
     return redirectWithError(request, "Invalid OAuth state");
   }
@@ -84,14 +84,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     target.searchParams.set("room", room);
   }
 
+  const headers = new Headers();
+  headers.append("Set-Cookie", clearStateCookie(spotifyStateCookieName, request));
+  if (tokenData.refresh_token) {
+    headers.append("Set-Cookie", buildRefreshCookie(tokenData.refresh_token, request));
+  }
+
   return redirect(target.toString(), {
-    headers: {
-      "Set-Cookie": clearStateCookie(stateCookieName, request),
-    },
+    headers,
   });
 }
 
 export default function AuthSpotifyCallback() {
   return null;
 }
-

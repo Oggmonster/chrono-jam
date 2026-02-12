@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Route } from "./+types/play-lobby";
 import { Link } from "react-router";
 
@@ -7,7 +8,8 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { phaseLabel, useRoomState } from "~/lib/game-engine";
-import { mockPlayers } from "~/lib/mock-room";
+import { usePlayerPresence } from "~/lib/player-presence";
+import { getPlayerSession } from "~/lib/player-session";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Lobby" }];
@@ -17,6 +19,8 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const room = useRoomState(roomId, "player");
   const running = room.state.lifecycle === "running";
+  const playerSession = useMemo(() => getPlayerSession(roomId), [roomId]);
+  usePlayerPresence(playerSession, room.controls);
 
   return (
     <main className="jam-page">
@@ -40,21 +44,29 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
           </CardHeader>
           <CardContent>
             <ul className="flex flex-wrap justify-center gap-2">
-              {mockPlayers.map((player) => (
+              {room.state.participants.map((player) => (
                 <PlayerChip key={player.id} player={player} />
               ))}
             </ul>
+            {room.state.participants.length === 0 ? (
+              <p className="text-center text-sm font-semibold text-[#51449e]">No players joined yet.</p>
+            ) : null}
           </CardContent>
         </Card>
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Button asChild size="lg" disabled={!running}>
+          <Button asChild size="lg" disabled={!running || !playerSession}>
             <Link to={`/play/game/${roomId}`}>Enter Round Screen</Link>
           </Button>
           <Button asChild variant="secondary">
             <Link to="/play/join">Change Room</Link>
           </Button>
         </div>
+        {!playerSession ? (
+          <p className="mt-3 text-center text-sm font-semibold text-[#8d2e2a]">
+            Join with a player name first to participate.
+          </p>
+        ) : null}
       </section>
     </main>
   );

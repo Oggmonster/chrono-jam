@@ -8,9 +8,14 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { generateRoomCode, normalizeRoomCode } from "~/lib/room-code";
-
-const spotifyTokenKey = "chronojam:spotify-access-token";
-const spotifyTokenExpiryKey = "chronojam:spotify-access-token-expiry";
+import {
+  isTokenExpiring,
+  readStoredSpotifyToken,
+  refreshSpotifyAccessToken,
+  spotifyTokenExpiryKey,
+  spotifyTokenKey,
+  storeSpotifyToken,
+} from "~/lib/spotify-token";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Setup" }];
@@ -28,9 +33,21 @@ export default function HostSetup() {
       return;
     }
 
-    const saved = window.localStorage.getItem(spotifyTokenKey);
-    if (saved) {
-      setToken(saved);
+    const stored = readStoredSpotifyToken();
+    if (stored.accessToken) {
+      setToken(stored.accessToken);
+    }
+
+    if (stored.accessToken && isTokenExpiring(stored.expiresAt)) {
+      void refreshSpotifyAccessToken()
+        .then(({ accessToken, expiresIn }) => {
+          storeSpotifyToken(accessToken, expiresIn);
+          setToken(accessToken);
+          setStatusText("Spotify token refreshed.");
+        })
+        .catch(() => {
+          setStatusText("Spotify token expired. Please reconnect Spotify.");
+        });
     }
   }, []);
 
@@ -58,13 +75,11 @@ export default function HostSetup() {
     }
 
     setToken(oauthToken);
-    window.localStorage.setItem(spotifyTokenKey, oauthToken);
-
     if (oauthExpiry) {
-      const expiresAt = Date.now() + Number(oauthExpiry) * 1000;
-      window.localStorage.setItem(spotifyTokenExpiryKey, String(expiresAt));
+      storeSpotifyToken(oauthToken, Number(oauthExpiry));
       setStatusText("Spotify connected. Access token saved.");
     } else {
+      window.localStorage.setItem(spotifyTokenKey, oauthToken);
       setStatusText("Spotify connected. Access token saved.");
     }
   }, [searchParams]);

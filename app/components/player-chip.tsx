@@ -1,8 +1,11 @@
 import type { CSSProperties } from "react";
 
-import type { MockPlayer } from "~/lib/mock-room";
+type PlayerChipModel = {
+  name: string;
+  color: string;
+};
 
-export function PlayerChip({ player }: { player: MockPlayer }) {
+export function PlayerChip({ player }: { player: PlayerChipModel }) {
   return (
     <li
       className="inline-flex items-center gap-2 rounded-full border-2 border-[#243a84] px-2 py-1 text-[#12296c]"

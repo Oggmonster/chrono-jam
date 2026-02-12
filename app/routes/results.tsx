@@ -6,7 +6,6 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { useRoomState } from "~/lib/game-engine";
-import { leaderboard, mockPlayers } from "~/lib/mock-room";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Results" }];
@@ -15,6 +14,11 @@ export function meta({}: Route.MetaArgs) {
 export default function Results({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const room = useRoomState(roomId, "player");
+  const ranking = room.state.participants.map((participant, index) => ({
+    id: participant.id,
+    name: participant.name,
+    points: Math.max(200, 1000 - index * 200),
+  }));
 
   return (
     <main className="jam-page">
@@ -27,27 +31,23 @@ export default function Results({ params }: Route.ComponentProps) {
 
         <Card className="mt-5">
           <CardHeader>
-            <CardTitle>Leaderboard (Mock Points)</CardTitle>
+            <CardTitle>Leaderboard (Temporary Points)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {leaderboard.map((entry, index) => {
-              const player = mockPlayers.find(({ id }) => id === entry.playerId);
-              if (!player) {
-                return null;
-              }
-
-              return (
-                <div
-                  key={entry.playerId}
-                  className="flex items-center justify-between rounded-xl border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2"
-                >
-                  <span className="font-extrabold text-[#223f94]">
-                    {index + 1}. {player.name}
-                  </span>
-                  <Badge variant={index === 0 ? "success" : "default"}>+{entry.points}</Badge>
-                </div>
-              );
-            })}
+            {ranking.map((entry, index) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between rounded-xl border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2"
+              >
+                <span className="font-extrabold text-[#223f94]">
+                  {index + 1}. {entry.name}
+                </span>
+                <Badge variant={index === 0 ? "success" : "default"}>+{entry.points}</Badge>
+              </div>
+            ))}
+            {ranking.length === 0 ? (
+              <p className="text-center text-sm font-semibold text-[#51449e]">No players to rank yet.</p>
+            ) : null}
           </CardContent>
         </Card>
 

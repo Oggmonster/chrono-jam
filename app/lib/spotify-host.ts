@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -70,11 +70,16 @@ function loadSpotifySdk(): Promise<void> {
 
 export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
   const playerRef = useRef<SpotifyPlayer | null>(null);
+  const tokenRef = useRef(accessToken);
 
   const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    tokenRef.current = accessToken;
+  }, [accessToken]);
 
   const initialize = useCallback(async () => {
     if (!accessToken) {
@@ -94,7 +99,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
     if (!playerRef.current) {
       const player = new window.Spotify.Player({
         name: "ChronoJam Host Player",
-        getOAuthToken: (cb) => cb(accessToken),
+        getOAuthToken: (cb) => cb(tokenRef.current),
         volume: 0.85,
       });
 
@@ -136,7 +141,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
 
   const playTrack = useCallback(
     async (trackUri: string, startMs = 0) => {
-      if (!accessToken || !deviceId) {
+      if (!tokenRef.current || !deviceId) {
         setError("Connect Spotify player before trying playback.");
         return;
       }
@@ -146,7 +151,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
         {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${tokenRef.current}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -160,21 +165,21 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
         setError(`Spotify play failed (${response.status}). Ensure scopes include streaming and user-modify-playback-state.`);
       }
     },
-    [accessToken, deviceId],
+    [deviceId],
   );
 
   const pause = useCallback(async () => {
-    if (!accessToken || !deviceId) {
+    if (!tokenRef.current || !deviceId) {
       return;
     }
 
     await fetch(`https://api.spotify.com/v1/me/player/pause?device_id=${deviceId}`, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${tokenRef.current}`,
       },
     });
-  }, [accessToken, deviceId]);
+  }, [deviceId]);
 
   const disconnect = useCallback(() => {
     playerRef.current?.disconnect();

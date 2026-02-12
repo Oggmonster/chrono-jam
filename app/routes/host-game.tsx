@@ -11,8 +11,12 @@ import { Input } from "~/components/ui/input";
 import { Progress } from "~/components/ui/progress";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import { useSpotifyHostPlayer } from "~/lib/spotify-host";
-
-const spotifyTokenKey = "chronojam:spotify-access-token";
+import {
+  isTokenExpiring,
+  readStoredSpotifyToken,
+  refreshSpotifyAccessToken,
+  storeSpotifyToken,
+} from "~/lib/spotify-token";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Game" }];
@@ -23,6 +27,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
   const room = useRoomState(roomId, "host");
 
   const [token, setToken] = useState("");
+  const [tokenStatus, setTokenStatus] = useState("");
   const spotify = useSpotifyHostPlayer(token);
   const autoPlayedRef = useRef<string>("");
 
@@ -31,10 +36,45 @@ export default function HostGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    const saved = window.localStorage.getItem(spotifyTokenKey);
-    if (saved) {
-      setToken(saved);
+    const stored = readStoredSpotifyToken();
+    if (stored.accessToken) {
+      setToken(stored.accessToken);
     }
+
+    if (stored.accessToken && isTokenExpiring(stored.expiresAt)) {
+      void refreshSpotifyAccessToken()
+        .then(({ accessToken, expiresIn }) => {
+          storeSpotifyToken(accessToken, expiresIn);
+          setToken(accessToken);
+          setTokenStatus("Token refreshed.");
+        })
+        .catch(() => {
+          setTokenStatus("Token refresh failed. Reconnect Spotify.");
+        });
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const stored = readStoredSpotifyToken();
+      if (!stored.accessToken || !isTokenExpiring(stored.expiresAt)) {
+        return;
+      }
+
+      void refreshSpotifyAccessToken()
+        .then(({ accessToken, expiresIn }) => {
+          storeSpotifyToken(accessToken, expiresIn);
+          setToken(accessToken);
+          setTokenStatus("Token refreshed.");
+        })
+        .catch(() => {
+          setTokenStatus("Token refresh failed. Reconnect Spotify.");
+        });
+    }, 20_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
 
   const progress = useMemo(() => {
@@ -78,7 +118,20 @@ export default function HostGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    window.localStorage.setItem(spotifyTokenKey, token.trim());
+    storeSpotifyToken(token.trim(), 60 * 60);
+    setTokenStatus("Token saved manually.");
+  };
+
+  const refreshToken = () => {
+    void refreshSpotifyAccessToken()
+      .then(({ accessToken, expiresIn }) => {
+        storeSpotifyToken(accessToken, expiresIn);
+        setToken(accessToken);
+        setTokenStatus("Token refreshed.");
+      })
+      .catch(() => {
+        setTokenStatus("Token refresh failed. Reconnect Spotify.");
+      });
   };
 
   const remainingSeconds = Math.ceil(room.remainingMs / 1000);
@@ -162,6 +215,9 @@ export default function HostGame({ params }: Route.ComponentProps) {
                 <Button variant="outline" onClick={saveToken}>
                   Save Token
                 </Button>
+                <Button variant="outline" onClick={refreshToken}>
+                  Refresh Token
+                </Button>
                 <Button variant="secondary" onClick={() => void spotify.initialize()}>
                   <Radio className="h-4 w-4" />
                   Init SDK
@@ -180,6 +236,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
                 <p>Connected: {spotify.connected ? "yes" : "no"}</p>
                 <p>Ready: {spotify.ready ? "yes" : "no"}</p>
                 <p>Device ID: {spotify.deviceId ?? "-"}</p>
+                {tokenStatus ? <p>{tokenStatus}</p> : null}
                 {spotify.error ? <p className="text-[#b43d2b]">{spotify.error}</p> : null}
               </div>
             </CardContent>

@@ -6,6 +6,9 @@ const spotifyScopes = [
   "user-modify-playback-state",
 ];
 
+export const spotifyStateCookieName = "chronojam_spotify_state";
+export const spotifyRefreshCookieName = "chronojam_spotify_refresh";
+
 function getRequiredEnv(name: "SPOTIFY_CLIENT_ID" | "SPOTIFY_CLIENT_SECRET") {
   const value = process.env[name];
   if (!value) {
@@ -102,4 +105,12 @@ export function buildStateCookie(name: string, value: string, request: Request, 
 
 export function clearStateCookie(name: string, request: Request) {
   return buildStateCookie(name, "", request, 0);
+}
+
+export function buildRefreshCookie(value: string, request: Request, maxAgeSeconds = 60 * 60 * 24 * 30) {
+  return buildStateCookie(spotifyRefreshCookieName, encodeURIComponent(value), request, maxAgeSeconds);
+}
+
+export function clearRefreshCookie(request: Request) {
+  return clearStateCookie(spotifyRefreshCookieName, request);
 }

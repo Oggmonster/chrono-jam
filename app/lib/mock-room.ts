@@ -1,9 +1,3 @@
-export type MockPlayer = {
-  id: string;
-  name: string;
-  color: string;
-};
-
 export type MockRound = {
   id: string;
   title: string;
@@ -12,13 +6,6 @@ export type MockRound = {
   spotifyUri: string;
   startMs: number;
 };
-
-export const mockPlayers: MockPlayer[] = [
-  { id: "alex", name: "Alex", color: "#4ec7e0" },
-  { id: "sam", name: "Sam", color: "#f28d35" },
-  { id: "lena", name: "Lena", color: "#e45395" },
-  { id: "chris", name: "Chris", color: "#7bcf4b" },
-];
 
 export const mockRounds: MockRound[] = [
   {

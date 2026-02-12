@@ -7,7 +7,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { useRoomState } from "~/lib/game-engine";
-import { mockPlayers, preloadChecks } from "~/lib/mock-room";
+import { preloadChecks } from "~/lib/mock-room";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Lobby" }];
@@ -38,10 +38,13 @@ export default function HostLobby({ params }: Route.ComponentProps) {
             </CardHeader>
             <CardContent>
               <ul className="flex flex-wrap justify-center gap-2" aria-label="Players in room">
-                {mockPlayers.map((player) => (
+                {room.state.participants.map((player) => (
                   <PlayerChip key={player.id} player={player} />
                 ))}
               </ul>
+              {room.state.participants.length === 0 ? (
+                <p className="text-center text-sm font-semibold text-[#51449e]">No players joined yet.</p>
+              ) : null}
             </CardContent>
           </Card>
 

@@ -4,6 +4,13 @@ import { mockRounds } from "~/lib/mock-room";
 
 export type GamePhase = "LISTEN" | "GUESS" | "TIMELINE" | "REVEAL" | "INTERMISSION";
 export type RoomLifecycle = "lobby" | "running" | "finished";
+export type RoomParticipant = {
+  id: string;
+  name: string;
+  color: string;
+  joinedAt: number;
+  lastSeenAt: number;
+};
 
 export type RoomState = {
   roomId: string;
@@ -13,9 +20,15 @@ export type RoomState = {
   phaseStartedAt: number;
   phaseEndsAt: number;
   updatedAt: number;
+  participants: RoomParticipant[];
 };
 
 type RoomRole = "host" | "player";
+
+type RoomCommand =
+  | { type: "replace_state"; state: RoomState }
+  | { type: "upsert_participant"; participant: Pick<RoomParticipant, "id" | "name"> }
+  | { type: "remove_participant"; participantId: string };
 
 type RoomHookResult = {
   state: RoomState;
@@ -27,10 +40,14 @@ type RoomHookResult = {
     skipPhase: () => void;
     resetLobby: () => void;
     syncState: () => void;
+    upsertParticipant: (participant: Pick<RoomParticipant, "id" | "name">) => void;
+    removeParticipant: (participantId: string) => void;
   };
 };
 
 const phaseOrder: GamePhase[] = ["LISTEN", "GUESS", "TIMELINE", "REVEAL", "INTERMISSION"];
+const participantColors = ["#4ec7e0", "#f28d35", "#e45395", "#7bcf4b", "#7d6cfc", "#ff7f5c"];
+const participantStaleMs = 20_000;
 
 const phaseDurationsMs: Record<GamePhase, number> = {
   LISTEN: 15_000,
@@ -40,16 +57,68 @@ const phaseDurationsMs: Record<GamePhase, number> = {
   INTERMISSION: 5_000,
 };
 
-function roomStorageKey(roomId: string) {
-  return `chronojam:room:${roomId}`;
-}
-
-function roomChannelName(roomId: string) {
-  return `chronojam:room:channel:${roomId}`;
-}
-
 function nowMs() {
   return Date.now();
+}
+
+function apiRoomPath(roomId: string) {
+  return `/api/room/${encodeURIComponent(roomId)}`;
+}
+
+async function fetchRoomStateFromServer(roomId: string) {
+  const response = await fetch(apiRoomPath(roomId), {
+    method: "GET",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Room fetch failed (${response.status})`);
+  }
+
+  return (await response.json()) as RoomState;
+}
+
+async function postRoomCommand(roomId: string, command: RoomCommand) {
+  const response = await fetch(apiRoomPath(roomId), {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(command),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Room command failed (${response.status})`);
+  }
+
+  return (await response.json()) as RoomState;
+}
+
+function shouldApplyRemoteState(current: RoomState, incoming: RoomState) {
+  if (incoming.updatedAt > current.updatedAt) {
+    return true;
+  }
+
+  if (incoming.updatedAt < current.updatedAt) {
+    return false;
+  }
+
+  return (
+    incoming.lifecycle !== current.lifecycle ||
+    incoming.phase !== current.phase ||
+    incoming.roundIndex !== current.roundIndex ||
+    incoming.phaseEndsAt !== current.phaseEndsAt ||
+    incoming.participants.length !== current.participants.length
+  );
+}
+
+function colorForParticipantIndex(index: number) {
+  return participantColors[index % participantColors.length]!;
 }
 
 export function createLobbyState(roomId: string, at = nowMs()): RoomState {
@@ -61,6 +130,7 @@ export function createLobbyState(roomId: string, at = nowMs()): RoomState {
     phaseStartedAt: at,
     phaseEndsAt: at,
     updatedAt: at,
+    participants: [],
   };
 }
 
@@ -129,29 +199,80 @@ export function tickRoomState(state: RoomState, at = nowMs()): RoomState {
   return next;
 }
 
-function readPersistedState(roomId: string): RoomState | null {
-  if (typeof window === "undefined") {
-    return null;
+function pruneStaleParticipants(roomState: RoomState, at = nowMs()) {
+  const nextParticipants = roomState.participants.filter(
+    (participant) => at - participant.lastSeenAt <= participantStaleMs,
+  );
+  if (nextParticipants.length === roomState.participants.length) {
+    return roomState;
   }
 
-  const raw = window.localStorage.getItem(roomStorageKey(roomId));
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as RoomState;
-  } catch {
-    return null;
-  }
+  return {
+    ...roomState,
+    participants: nextParticipants,
+    updatedAt: at,
+  };
 }
 
-function writeState(roomState: RoomState) {
-  if (typeof window === "undefined") {
-    return;
+function upsertParticipantInState(
+  roomState: RoomState,
+  participant: Pick<RoomParticipant, "id" | "name">,
+  at = nowMs(),
+) {
+  const normalizedName = participant.name.trim();
+  if (!normalizedName) {
+    return roomState;
   }
 
-  window.localStorage.setItem(roomStorageKey(roomState.roomId), JSON.stringify(roomState));
+  const existingIndex = roomState.participants.findIndex(({ id }) => id === participant.id);
+  if (existingIndex >= 0) {
+    const existing = roomState.participants[existingIndex]!;
+    const shouldSkipUpdate = existing.name === normalizedName && at - existing.lastSeenAt < 2_000;
+    if (shouldSkipUpdate) {
+      return roomState;
+    }
+
+    const nextParticipants = [...roomState.participants];
+    nextParticipants[existingIndex] = {
+      ...existing,
+      name: normalizedName,
+      lastSeenAt: at,
+    };
+
+    return {
+      ...roomState,
+      participants: nextParticipants,
+      updatedAt: at,
+    };
+  }
+
+  return {
+    ...roomState,
+    participants: [
+      ...roomState.participants,
+      {
+        id: participant.id,
+        name: normalizedName,
+        color: colorForParticipantIndex(roomState.participants.length),
+        joinedAt: at,
+        lastSeenAt: at,
+      },
+    ],
+    updatedAt: at,
+  };
+}
+
+function removeParticipantInState(roomState: RoomState, participantId: string, at = nowMs()) {
+  const nextParticipants = roomState.participants.filter(({ id }) => id !== participantId);
+  if (nextParticipants.length === roomState.participants.length) {
+    return roomState;
+  }
+
+  return {
+    ...roomState,
+    participants: nextParticipants,
+    updatedAt: at,
+  };
 }
 
 function getActiveRound(state: RoomState) {
@@ -161,57 +282,65 @@ function getActiveRound(state: RoomState) {
 export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
   const [state, setState] = useState<RoomState>(() => createLobbyState(roomId));
   const [now, setNow] = useState<number>(() => nowMs());
-  const channelRef = useRef<BroadcastChannel | null>(null);
+  const stateRef = useRef(state);
 
-  const commit = useCallback((nextState: RoomState) => {
-    writeState(nextState);
-    channelRef.current?.postMessage(nextState);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const sendStateToServer = useCallback((nextState: RoomState) => {
+    void postRoomCommand(roomId, { type: "replace_state", state: nextState }).catch(() => {
+      // Best-effort sync in dev mode.
+    });
+  }, [roomId]);
+
+  const syncRemoteIfNewer = useCallback((remoteState: RoomState) => {
+    setState((current) => (shouldApplyRemoteState(current, remoteState) ? remoteState : current));
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+    let cancelled = false;
 
-    const existing = readPersistedState(roomId);
-    if (existing) {
-      setState(existing);
-    } else if (role === "host") {
-      const initial = createLobbyState(roomId);
-      setState(initial);
-      writeState(initial);
-    }
-
-    const channel = new BroadcastChannel(roomChannelName(roomId));
-    channelRef.current = channel;
-
-    const onMessage = (event: MessageEvent<RoomState>) => {
-      setState(event.data);
-    };
-
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== roomStorageKey(roomId) || !event.newValue) {
-        return;
-      }
-
+    const load = async () => {
       try {
-        const parsed = JSON.parse(event.newValue) as RoomState;
-        setState(parsed);
+        const remote = await fetchRoomStateFromServer(roomId);
+        if (!cancelled) {
+          setState(remote);
+        }
       } catch {
-        // ignore malformed local state
+        if (!cancelled && role === "host") {
+          const fallback = createLobbyState(roomId);
+          setState(fallback);
+          sendStateToServer(fallback);
+        }
       }
     };
 
-    channel.addEventListener("message", onMessage);
-    window.addEventListener("storage", onStorage);
+    void load();
 
     return () => {
-      channel.removeEventListener("message", onMessage);
-      window.removeEventListener("storage", onStorage);
-      channel.close();
-      channelRef.current = null;
+      cancelled = true;
     };
-  }, [roomId, role]);
+  }, [role, roomId, sendStateToServer]);
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const remote = await fetchRoomStateFromServer(roomId);
+        syncRemoteIfNewer(remote);
+      } catch {
+        // Ignore transient polling failures.
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void poll();
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [roomId, syncRemoteIfNewer]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -230,9 +359,11 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
 
     const tickTimer = window.setInterval(() => {
       setState((prevState) => {
-        const nextState = tickRoomState(prevState);
+        const at = nowMs();
+        const phaseState = tickRoomState(prevState, at);
+        const nextState = pruneStaleParticipants(phaseState, at);
         if (nextState !== prevState) {
-          commit(nextState);
+          sendStateToServer(nextState);
         }
         return nextState;
       });
@@ -241,7 +372,7 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
     return () => {
       window.clearInterval(tickTimer);
     };
-  }, [commit, role]);
+  }, [role, sendStateToServer]);
 
   const controls = useMemo(
     () => ({
@@ -252,7 +383,7 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
 
         setState((prevState) => {
           const nextState = startRoomGame(prevState);
-          commit(nextState);
+          sendStateToServer(nextState);
           return nextState;
         });
       },
@@ -264,7 +395,7 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
         setState((prevState) => {
           const nextState = advanceRoomPhase(prevState);
           if (nextState !== prevState) {
-            commit(nextState);
+            sendStateToServer(nextState);
           }
           return nextState;
         });
@@ -276,17 +407,53 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
 
         const nextState = createLobbyState(roomId);
         setState(nextState);
-        commit(nextState);
+        sendStateToServer(nextState);
       },
       syncState: () => {
         if (role !== "host") {
           return;
         }
 
-        commit(state);
+        sendStateToServer(stateRef.current);
+      },
+      upsertParticipant: (participant: Pick<RoomParticipant, "id" | "name">) => {
+        setState((prevState) => {
+          const nextState = upsertParticipantInState(prevState, participant);
+          if (nextState !== prevState) {
+            void postRoomCommand(roomId, {
+              type: "upsert_participant",
+              participant,
+            })
+              .then((remote) => {
+                syncRemoteIfNewer(remote);
+              })
+              .catch(() => {
+                // Best-effort in local dev.
+              });
+          }
+          return nextState;
+        });
+      },
+      removeParticipant: (participantId: string) => {
+        setState((prevState) => {
+          const nextState = removeParticipantInState(prevState, participantId);
+          if (nextState !== prevState) {
+            void postRoomCommand(roomId, {
+              type: "remove_participant",
+              participantId,
+            })
+              .then((remote) => {
+                syncRemoteIfNewer(remote);
+              })
+              .catch(() => {
+                // Best-effort in local dev.
+              });
+          }
+          return nextState;
+        });
       },
     }),
-    [commit, role, roomId, state],
+    [role, roomId, sendStateToServer, syncRemoteIfNewer],
   );
 
   const round = getActiveRound(state);
