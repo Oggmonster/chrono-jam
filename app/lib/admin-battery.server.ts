@@ -1,7 +1,7 @@
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { CatalogEntry } from "~/lib/gamepack";
+import type { CatalogEntry, GamePackRound } from "~/lib/gamepack";
 import {
   getSpotifyClientId,
   getSpotifyClientSecret,
@@ -31,6 +31,7 @@ type SpotifyPlaylistTracksResponse = {
       name: string;
       type: string;
       is_local?: boolean;
+      duration_ms?: number;
       artists?: Array<{ id: string | null; name: string }>;
       album?: {
         release_date?: string;
@@ -41,6 +42,7 @@ type SpotifyPlaylistTracksResponse = {
       name: string;
       type: string;
       is_local: boolean;
+      duration_ms?: number;
       artists: Array<{ id: string | null; name: string }>;
       album?: {
         release_date?: string;
@@ -62,6 +64,29 @@ type BaseBatteryVersionAsset = {
   version: number;
 };
 
+type PlaylistPackAsset = {
+  kind: "playlist-pack";
+  playlistId: string;
+  version: number;
+  tracks: CatalogEntry[];
+  artists: CatalogEntry[];
+  rounds: GamePackRound[];
+};
+
+type PlaylistCatalogAsset = {
+  kind: "playlist-catalog";
+  playlists: Array<{
+    id: string;
+    name: string;
+    version: number;
+    sourcePlaylistId?: string;
+    sourcePlaylistName?: string;
+    trackCount?: number;
+    artistCount?: number;
+    roundCount?: number;
+  }>;
+};
+
 export type GenerateBaseBatteryResult = {
   version: number;
   fileName: string;
@@ -69,6 +94,18 @@ export type GenerateBaseBatteryResult = {
   playlistName: string;
   trackCount: number;
   artistCount: number;
+};
+
+export type GeneratePlaylistPackResult = {
+  version: number;
+  fileName: string;
+  playlistId: string;
+  playlistName: string;
+  sourcePlaylistId: string;
+  sourcePlaylistName: string;
+  trackCount: number;
+  artistCount: number;
+  roundCount: number;
 };
 
 type TokenCandidate = {
@@ -79,6 +116,16 @@ type TokenCandidate = {
 type SpotifyUserProfile = {
   id: string;
   display_name?: string;
+};
+
+type PlaylistRoundSeed = {
+  trackId: string;
+  trackName: string;
+  artistId: string;
+  artistName: string;
+  year: number;
+  spotifyUri: string;
+  startMs: number;
 };
 
 function parseSpotifyPlaylistId(rawValue: string) {
@@ -113,6 +160,42 @@ function parseSpotifyPlaylistId(rawValue: string) {
   } catch {
     return null;
   }
+}
+
+function parseReleaseYear(releaseDate: string | undefined) {
+  if (!releaseDate) {
+    return null;
+  }
+
+  const yearText = releaseDate.slice(0, 4);
+  const year = Number.parseInt(yearText, 10);
+  if (!Number.isFinite(year) || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  return year;
+}
+
+function buildRoundStartMs(durationMs: number | undefined) {
+  if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return 30_000;
+  }
+
+  const safeDuration = Math.max(0, durationMs);
+  const target = Math.floor(safeDuration * 0.35);
+  return Math.max(0, Math.min(60_000, target));
+}
+
+function normalizePlaylistPackId(rawValue: string) {
+  const normalized = rawValue
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!normalized || normalized.length > 48) {
+    return null;
+  }
+  return normalized;
 }
 
 async function fetchSpotifyToken(grantType: "client_credentials" | "refresh_token", refreshToken?: string) {
@@ -239,12 +322,13 @@ async function fetchPlaylistMeta(playlistId: string, candidates: TokenCandidate[
 async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandidate[]) {
   const tracks: CatalogEntry[] = [];
   const artists: CatalogEntry[] = [];
+  const roundSeeds: PlaylistRoundSeed[] = [];
   const seenTrackIds = new Set<string>();
   const seenArtistIds = new Set<string>();
 
   let nextUrl: string | null =
     `https://api.spotify.com/v1/playlists/${playlistId}/items` +
-    `?limit=100&offset=0&fields=items(item(id,name,type,is_local,artists(id,name),album(release_date))),next`;
+    `?limit=100&offset=0&fields=items(item(id,name,type,is_local,duration_ms,artists(id,name),album(release_date))),next`;
   while (nextUrl) {
     const response = await spotifyGetWithCandidates(nextUrl, candidates);
     const page = (await response.json()) as SpotifyPlaylistTracksResponse;
@@ -268,7 +352,8 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
         });
       }
 
-      for (const artist of track.artists) {
+      const artistList = Array.isArray(track.artists) ? track.artists : [];
+      for (const artist of artistList) {
         const artistId = artist.id?.trim() ?? "";
         const artistName = artist.name.trim();
         if (!artistId || !artistName || seenArtistIds.has(artistId)) {
@@ -281,6 +366,24 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
           display: artistName,
         });
       }
+
+      const releaseYear = parseReleaseYear(track.album?.release_date);
+      const primaryArtist = artistList.find(
+        (artist) => typeof artist.id === "string" && artist.id.trim().length > 0 && artist.name.trim().length > 0,
+      );
+      if (!releaseYear || !primaryArtist) {
+        continue;
+      }
+
+      roundSeeds.push({
+        trackId,
+        trackName,
+        artistId: primaryArtist.id!.trim(),
+        artistName: primaryArtist.name.trim(),
+        year: releaseYear,
+        spotifyUri: `spotify:track:${trackId}`,
+        startMs: buildRoundStartMs(track.duration_ms),
+      });
     }
 
     nextUrl = page.next;
@@ -290,7 +393,7 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
     throw new Error("Playlist produced no usable tracks/artists.");
   }
 
-  return { tracks, artists };
+  return { tracks, artists, roundSeeds };
 }
 
 async function userTokenCandidateFromRequest(request: Request): Promise<TokenCandidate | null> {
@@ -334,6 +437,59 @@ async function nextBaseBatteryVersion() {
   }
 
   return maxVersion + 1;
+}
+
+async function nextPlaylistPackVersion(playlistPackId: string) {
+  const playlistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
+  await mkdir(playlistsDir, { recursive: true });
+
+  const escapedPackId = playlistPackId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const versionPattern = new RegExp(`^${escapedPackId}\\.v(\\d+)\\.json$`, "u");
+
+  const fileNames = await readdir(playlistsDir);
+  let maxVersion = 0;
+  for (const fileName of fileNames) {
+    const match = versionPattern.exec(fileName);
+    if (!match) {
+      continue;
+    }
+
+    const version = Number.parseInt(match[1]!, 10);
+    if (Number.isFinite(version) && version > maxVersion) {
+      maxVersion = version;
+    }
+  }
+
+  return maxVersion + 1;
+}
+
+async function readPlaylistCatalogFile() {
+  const playlistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
+  const indexPath = path.join(playlistsDir, "index.json");
+
+  try {
+    const raw = await readFile(indexPath, "utf8");
+    const parsed = JSON.parse(raw) as PlaylistCatalogAsset;
+    if (parsed.kind === "playlist-catalog" && Array.isArray(parsed.playlists)) {
+      return parsed;
+    }
+  } catch {
+    // Fall back to default catalog.
+  }
+
+  return {
+    kind: "playlist-catalog",
+    playlists: [
+      {
+        id: "core-pop",
+        name: "Core Pop",
+        version: 1,
+        trackCount: 5,
+        artistCount: 5,
+        roundCount: 5,
+      },
+    ],
+  } satisfies PlaylistCatalogAsset;
 }
 
 export async function generateBaseBatteryFromPlaylist(
@@ -413,5 +569,124 @@ export async function generateBaseBatteryFromPlaylist(
     playlistName: meta.name,
     trackCount: payload.tracks.length,
     artistCount: payload.artists.length,
+  };
+}
+
+export async function generatePlaylistPackFromPlaylist(
+  rawPlaylistPackId: string,
+  rawPlaylist: string,
+  request: Request,
+  accessTokenOverride?: string,
+): Promise<GeneratePlaylistPackResult> {
+  const playlistPackId = normalizePlaylistPackId(rawPlaylistPackId);
+  if (!playlistPackId) {
+    throw new Error("Invalid pack ID. Use letters, numbers, and dashes.");
+  }
+
+  const playlistId = parseSpotifyPlaylistId(rawPlaylist);
+  if (!playlistId) {
+    throw new Error("Invalid Spotify playlist ID/URL.");
+  }
+
+  const userCandidate = await userTokenCandidateFromRequest(request);
+  const browserToken = accessTokenOverride?.trim() ?? "";
+  const tokenCandidates: TokenCandidate[] = [];
+  if (browserToken) {
+    tokenCandidates.push({
+      token: browserToken,
+      source: "browser",
+    });
+  }
+  if (userCandidate) {
+    tokenCandidates.push(userCandidate);
+  }
+
+  if (tokenCandidates.length === 0) {
+    throw new Error("Missing Spotify user token. Connect Spotify in host setup and retry.");
+  }
+
+  const [profile, meta] = await Promise.all([
+    fetchCurrentUserProfile(tokenCandidates),
+    fetchPlaylistMeta(playlistId, tokenCandidates),
+  ]);
+
+  const ownerId = meta.owner?.id?.trim() ?? "";
+  const userId = profile.id.trim();
+
+  let catalog: { tracks: CatalogEntry[]; artists: CatalogEntry[]; roundSeeds: PlaylistRoundSeed[] };
+  try {
+    catalog = await fetchPlaylistCatalog(playlistId, tokenCandidates);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Spotify access denied")) {
+      throw new Error(
+        `Spotify denied playlist items. Since February 2026, playlist items can only be read for playlists you own/collaborate on. ` +
+          `Connected user: ${userId || "unknown"}. Playlist owner: ${ownerId || "unknown"}. ` +
+          `Create/copy this playlist under your account and retry.`,
+      );
+    }
+    throw error;
+  }
+
+  const rounds: GamePackRound[] = catalog.roundSeeds.map((seed, index) => ({
+    roundId: `${playlistPackId}-r${index + 1}`,
+    trackId: seed.trackId,
+    trackName: seed.trackName,
+    artistId: seed.artistId,
+    artistName: seed.artistName,
+    year: seed.year,
+    spotifyUri: seed.spotifyUri,
+    startMs: seed.startMs,
+  }));
+
+  if (rounds.length === 0) {
+    throw new Error("Playlist pack produced no usable rounds (missing release years/artists).");
+  }
+
+  const version = await nextPlaylistPackVersion(playlistPackId);
+  const fileName = `${playlistPackId}.v${version}.json`;
+  const playlistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
+  const playlistPackPath = path.join(playlistsDir, fileName);
+  const indexPath = path.join(playlistsDir, "index.json");
+
+  const payload: PlaylistPackAsset = {
+    kind: "playlist-pack",
+    playlistId: playlistPackId,
+    version,
+    tracks: catalog.tracks,
+    artists: catalog.artists,
+    rounds,
+  };
+
+  const existingCatalog = await readPlaylistCatalogFile();
+  const nextCatalog: PlaylistCatalogAsset = {
+    kind: "playlist-catalog",
+    playlists: [
+      ...existingCatalog.playlists.filter((entry) => entry.id !== playlistPackId),
+      {
+        id: playlistPackId,
+        name: meta.name,
+        version,
+        sourcePlaylistId: meta.id,
+        sourcePlaylistName: meta.name,
+        trackCount: catalog.tracks.length,
+        artistCount: catalog.artists.length,
+        roundCount: rounds.length,
+      },
+    ].sort((a, b) => a.id.localeCompare(b.id)),
+  };
+
+  await writeFile(playlistPackPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await writeFile(indexPath, `${JSON.stringify(nextCatalog, null, 2)}\n`, "utf8");
+
+  return {
+    version,
+    fileName,
+    playlistId: playlistPackId,
+    playlistName: meta.name,
+    sourcePlaylistId: meta.id,
+    sourcePlaylistName: meta.name,
+    trackCount: payload.tracks.length,
+    artistCount: payload.artists.length,
+    roundCount: payload.rounds.length,
   };
 }

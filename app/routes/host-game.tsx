@@ -12,6 +12,7 @@ import { Progress } from "~/components/ui/progress";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import { useSpotifyHostPlayer } from "~/lib/spotify-host";
 import {
+  clearStoredSpotifyToken,
   isTokenExpiring,
   readStoredSpotifyToken,
   refreshSpotifyAccessToken,
@@ -28,11 +29,23 @@ export default function HostGame({ params }: Route.ComponentProps) {
 
   const [token, setToken] = useState("");
   const [tokenStatus, setTokenStatus] = useState("");
+  const [refreshingToken, setRefreshingToken] = useState(false);
   const [interactionUnlocked, setInteractionUnlocked] = useState(false);
   const spotify = useSpotifyHostPlayer(token);
   const autoPlayedRef = useRef<string>("");
   const autoInitTokenRef = useRef<string>("");
   const interactionUnlockedRef = useRef(false);
+
+  const validateAccessToken = async (candidateToken: string) => {
+    const response = await fetch("https://api.spotify.com/v1/me", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${candidateToken}`,
+      },
+    });
+
+    return response.ok;
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -44,7 +57,64 @@ export default function HostGame({ params }: Route.ComponentProps) {
       setToken(stored.accessToken);
     }
 
-    if (!stored.accessToken || isTokenExpiring(stored.expiresAt)) {
+    let cancelled = false;
+
+    setRefreshingToken(true);
+    void refreshSpotifyAccessToken()
+      .then(({ accessToken, expiresIn }) => {
+        if (cancelled) {
+          return;
+        }
+
+        storeSpotifyToken(accessToken, expiresIn);
+        setToken(accessToken);
+        setTokenStatus("Token refreshed.");
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        if (!stored.accessToken) {
+          setTokenStatus("Missing token. Reconnect Spotify.");
+          return;
+        }
+
+        void validateAccessToken(stored.accessToken).then((valid) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (valid) {
+            setToken(stored.accessToken);
+            setTokenStatus("Using stored token (refresh unavailable).");
+            return;
+          }
+
+          clearStoredSpotifyToken();
+          setToken("");
+          setTokenStatus("Stored token is invalid. Reconnect Spotify.");
+        });
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRefreshingToken(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const stored = readStoredSpotifyToken();
+      if (!isTokenExpiring(stored.expiresAt)) {
+        return;
+      }
+
+      setRefreshingToken(true);
       void refreshSpotifyAccessToken()
         .then(({ accessToken, expiresIn }) => {
           storeSpotifyToken(accessToken, expiresIn);
@@ -56,26 +126,11 @@ export default function HostGame({ params }: Route.ComponentProps) {
             setTokenStatus("Missing token. Reconnect Spotify.");
             return;
           }
+
           setTokenStatus("Token refresh failed. Reconnect Spotify.");
-        });
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const stored = readStoredSpotifyToken();
-      if (!isTokenExpiring(stored.expiresAt)) {
-        return;
-      }
-
-      void refreshSpotifyAccessToken()
-        .then(({ accessToken, expiresIn }) => {
-          storeSpotifyToken(accessToken, expiresIn);
-          setToken(accessToken);
-          setTokenStatus("Token refreshed.");
         })
-        .catch(() => {
-          setTokenStatus("Token refresh failed. Reconnect Spotify.");
+        .finally(() => {
+          setRefreshingToken(false);
         });
     }, 20_000);
 
@@ -205,6 +260,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
   };
 
   const refreshToken = () => {
+    setRefreshingToken(true);
     void refreshSpotifyAccessToken()
       .then(({ accessToken, expiresIn }) => {
         storeSpotifyToken(accessToken, expiresIn);
@@ -213,6 +269,9 @@ export default function HostGame({ params }: Route.ComponentProps) {
       })
       .catch(() => {
         setTokenStatus("Token refresh failed. Reconnect Spotify.");
+      })
+      .finally(() => {
+        setRefreshingToken(false);
       });
   };
 
@@ -320,7 +379,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
                   Save Token
                 </Button>
                 <Button variant="outline" onClick={refreshToken}>
-                  Refresh Token
+                  {refreshingToken ? "Refreshing..." : "Refresh Token"}
                 </Button>
                 <Button variant="secondary" onClick={() => void spotify.initialize()}>
                   <Radio className="h-4 w-4" />

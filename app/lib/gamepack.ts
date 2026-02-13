@@ -1,4 +1,8 @@
-import { normalizeForAutocomplete } from "~/lib/autocomplete";
+import {
+  buildAutocompleteIndex,
+  normalizeForAutocomplete,
+  type AutocompleteIndex,
+} from "~/lib/autocomplete";
 import { mockRounds } from "~/lib/mock-room";
 
 export type CatalogEntry = {
@@ -38,6 +42,18 @@ type PlaylistPackAsset = {
   rounds: GamePackRound[];
 };
 
+type PlaylistCatalogAsset = {
+  kind: "playlist-catalog";
+  playlists: Array<{
+    id: string;
+    name: string;
+    version: number;
+    trackCount?: number;
+    artistCount?: number;
+    roundCount?: number;
+  }>;
+};
+
 export type GamePack = {
   meta: {
     version: number;
@@ -49,6 +65,11 @@ export type GamePack = {
     batteryVersion: number;
   };
   rounds: GamePackRound[];
+};
+
+export type CatalogAutocompletePack = {
+  tracks: AutocompleteIndex;
+  artists: AutocompleteIndex;
 };
 
 type StoreMetaRecord = {
@@ -83,6 +104,7 @@ const storeTracks = "tracks";
 const storeArtists = "artists";
 const storePacks = "packs";
 const defaultBaseBatteryVersion = 1;
+let cachedAutocompletePack: { key: string; pack: CatalogAutocompletePack } | null = null;
 
 function fnv1a(input: string) {
   let hash = 2166136261;
@@ -192,6 +214,14 @@ async function writeStoredPlaylistPack(db: IDBDatabase, asset: PlaylistPackAsset
   await transactionDone(tx);
 }
 
+async function readCatalogEntries(db: IDBDatabase, storeName: typeof storeTracks | typeof storeArtists) {
+  const tx = db.transaction(storeName, "readonly");
+  const request = tx.objectStore(storeName).getAll();
+  const entries = (await requestPromise(request)) as CatalogEntry[];
+  await transactionDone(tx);
+  return entries;
+}
+
 async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTracks | typeof storeArtists, entries: CatalogEntry[]) {
   const readTx = db.transaction(storeName, "readonly");
   const readRequest = readTx.objectStore(storeName).getAll();
@@ -273,8 +303,47 @@ async function ensureBaseBattery(
   return { source: "fresh", hash, version };
 }
 
-async function ensurePlaylistPack(db: IDBDatabase, playlistId: string): Promise<{ source: DataSource; hash: string; pack: PlaylistPackAsset }> {
-  const version = 1;
+async function resolvePlaylistPackVersions(playlistIds: string[]) {
+  const defaultVersions = Object.fromEntries(playlistIds.map((playlistId) => [playlistId, 1] as const)) as Record<
+    string,
+    number
+  >;
+
+  try {
+    const catalog = await fetchJsonAsset<PlaylistCatalogAsset>("/game-data/playlists/index.json");
+    if (catalog.kind !== "playlist-catalog" || !Array.isArray(catalog.playlists)) {
+      return defaultVersions;
+    }
+
+    const byId = new Map(
+      catalog.playlists
+        .filter(
+          (entry): entry is PlaylistCatalogAsset["playlists"][number] =>
+            typeof entry?.id === "string" &&
+            entry.id.trim().length > 0 &&
+            typeof entry?.version === "number" &&
+            Number.isFinite(entry.version) &&
+            entry.version >= 1,
+        )
+        .map((entry) => [entry.id.trim(), Math.floor(entry.version)] as const),
+    );
+
+    const resolved: Record<string, number> = {};
+    for (const playlistId of playlistIds) {
+      resolved[playlistId] = byId.get(playlistId) ?? 1;
+    }
+
+    return resolved;
+  } catch {
+    return defaultVersions;
+  }
+}
+
+async function ensurePlaylistPack(
+  db: IDBDatabase,
+  playlistId: string,
+  version: number,
+): Promise<{ source: DataSource; hash: string; pack: PlaylistPackAsset }> {
   const metaKey = `playlist-pack:${playlistId}`;
   const existing = await readMeta(db, metaKey);
   if (existing && existing.version === version) {
@@ -347,7 +416,12 @@ export async function loadGamePack(
     const safePlaylistIds = playlistIds.length > 0 ? playlistIds : [...defaultPlaylistIds];
     const baseBatteryVersion = await resolveBaseBatteryVersion();
     const battery = await ensureBaseBattery(db, baseBatteryVersion);
-    const playlistResults = await Promise.all(safePlaylistIds.map((playlistId) => ensurePlaylistPack(db, playlistId)));
+    const playlistVersions = await resolvePlaylistPackVersions(safePlaylistIds);
+    const playlistResults = await Promise.all(
+      safePlaylistIds.map((playlistId) =>
+        ensurePlaylistPack(db, playlistId, playlistVersions[playlistId] ?? 1),
+      ),
+    );
 
     const allRounds = playlistResults.flatMap((result) => result.pack.rounds);
     const dedupedRounds = Array.from(new Map(allRounds.map((round) => [round.roundId, round] as const)).values());
@@ -387,4 +461,41 @@ export async function loadGamePack(
       source: "memory",
     };
   }
+}
+
+export function getCachedCatalogAutocompletePack(expectedKey?: string) {
+  if (!cachedAutocompletePack) {
+    return null;
+  }
+
+  if (expectedKey && cachedAutocompletePack.key !== expectedKey) {
+    return null;
+  }
+
+  return cachedAutocompletePack.pack;
+}
+
+export async function loadCatalogAutocompletePack(cacheKey: string): Promise<CatalogAutocompletePack> {
+  if (cachedAutocompletePack && cachedAutocompletePack.key === cacheKey) {
+    return cachedAutocompletePack.pack;
+  }
+
+  const db = await openCatalogDb();
+  const [tracks, artists] = await Promise.all([
+    readCatalogEntries(db, storeTracks),
+    readCatalogEntries(db, storeArtists),
+  ]);
+  db.close();
+
+  const pack: CatalogAutocompletePack = {
+    tracks: buildAutocompleteIndex(tracks),
+    artists: buildAutocompleteIndex(artists),
+  };
+
+  cachedAutocompletePack = {
+    key: cacheKey,
+    pack,
+  };
+
+  return pack;
 }

@@ -1,5 +1,11 @@
-import { mockRounds } from "~/lib/mock-room";
+import {
+  defaultPlaylistIds as defaultPackPlaylistIds,
+  loadRoundsForPlaylistIds,
+  type PlaylistRound,
+} from "~/lib/playlist-rounds.server";
 import { buildTimelineEntries, clampTimelineInsertIndex } from "~/lib/timeline";
+
+const defaultRoomPlaylistIds = [...defaultPackPlaylistIds];
 
 type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
 type RoomLifecycle = "lobby" | "running" | "finished";
@@ -69,6 +75,8 @@ export type StoredRoomState = {
   guessSubmissions: Record<string, StoredGuessSubmission>;
   timelineSubmissions: Record<string, StoredTimelineSubmission>;
   preloadReadiness: Record<string, StoredPreloadReadiness>;
+  playlistIds: string[];
+  rounds: PlaylistRound[];
   timelineRoundIds: string[];
   scores: Record<string, number>;
   roundBreakdowns: Record<string, StoredRoundBreakdown>;
@@ -156,6 +164,8 @@ export function createStoredRoomState(roomId: string, at = nowMs()): StoredRoomS
     guessSubmissions: {},
     timelineSubmissions: {},
     preloadReadiness: {},
+    playlistIds: [...defaultRoomPlaylistIds],
+    rounds: loadRoundsForPlaylistIds([...defaultRoomPlaylistIds]),
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},
@@ -266,8 +276,24 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
     }
   }
 
+  const playlistIds = Array.isArray(state.playlistIds)
+    ? [
+        ...new Set(
+          state.playlistIds
+            .filter((playlistId): playlistId is string => typeof playlistId === "string")
+            .map((playlistId) => playlistId.trim())
+            .filter((playlistId) => playlistId.length > 0),
+        ),
+      ]
+    : [...defaultRoomPlaylistIds];
+  const rounds = loadRoundsForPlaylistIds(playlistIds);
+  const roundIdSet = new Set(rounds.map((round) => round.id));
+
   const timelineRoundIds = Array.isArray(state.timelineRoundIds)
-    ? state.timelineRoundIds.filter((roundId): roundId is string => typeof roundId === "string" && roundId.length > 0)
+    ? state.timelineRoundIds.filter(
+        (roundId): roundId is string =>
+          typeof roundId === "string" && roundId.length > 0 && roundIdSet.has(roundId),
+      )
     : [];
 
   const scoresEntries = state.scores;
@@ -340,11 +366,14 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
     }
   }
 
+  const parsedRoundIndex = Number.isFinite(Number(state.roundIndex)) ? Math.floor(Number(state.roundIndex)) : 0;
+  const maxRoundIndex = Math.max(0, rounds.length - 1);
+
   return {
     roomId,
     lifecycle,
     phase,
-    roundIndex: Math.max(0, Number(state.roundIndex ?? 0)),
+    roundIndex: Math.max(0, Math.min(maxRoundIndex, parsedRoundIndex)),
     phaseStartedAt: Number(state.phaseStartedAt ?? at),
     phaseEndsAt: Number(state.phaseEndsAt ?? at),
     updatedAt: Number(state.updatedAt ?? at),
@@ -353,6 +382,8 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
     guessSubmissions,
     timelineSubmissions,
     preloadReadiness,
+    playlistIds: playlistIds.length > 0 ? playlistIds : [...defaultRoomPlaylistIds],
+    rounds,
     timelineRoundIds,
     scores,
     roundBreakdowns,
@@ -419,6 +450,35 @@ function ensureRoomState(roomId: string, options: { notifyOnPrune?: boolean } = 
     const patched = {
       ...existing,
       preloadReadiness: {},
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!Array.isArray(existing.playlistIds) || existing.playlistIds.length === 0) {
+    const patched = {
+      ...existing,
+      playlistIds: [...defaultRoomPlaylistIds],
+      rounds: loadRoundsForPlaylistIds([...defaultRoomPlaylistIds]),
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!Array.isArray(existing.rounds) || existing.rounds.length === 0) {
+    const patched = {
+      ...existing,
+      rounds: loadRoundsForPlaylistIds(existing.playlistIds),
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  const maxRoundIndex = Math.max(0, existing.rounds.length - 1);
+  if (existing.roundIndex > maxRoundIndex) {
+    const patched = {
+      ...existing,
+      roundIndex: maxRoundIndex,
       updatedAt: nowMs(),
     };
     return setStoredRoomState(roomId, patched, { notify: false });
@@ -642,7 +702,7 @@ export function upsertTimelineSubmission(
         roundId,
         insertIndex: clampTimelineInsertIndex(
           submission.insertIndex,
-          buildTimelineEntries(base.timelineRoundIds, mockRounds).length,
+          buildTimelineEntries(base.timelineRoundIds, base.rounds).length,
         ),
         submittedAt: base.timelineSubmissions[key]?.submittedAt ?? nowMs(),
       },
@@ -695,6 +755,48 @@ export function upsertPreloadReadiness(
       [playerId]: nextReadiness,
     },
     updatedAt: nowMs(),
+  };
+
+  return setStoredRoomState(roomId, nextState);
+}
+
+export function updateRoomPlaylistIds(roomId: string, playlistIds: string[]): StoredRoomState {
+  const base = ensureRoomState(roomId, { notifyOnPrune: false });
+  if (base.lifecycle !== "lobby") {
+    return base;
+  }
+
+  const sanitized = [
+    ...new Set(
+      playlistIds
+        .filter((playlistId): playlistId is string => typeof playlistId === "string")
+        .map((playlistId) => playlistId.trim())
+        .filter((playlistId) => playlistId.length > 0),
+    ),
+  ];
+
+  const nextPlaylistIds = sanitized.length > 0 ? sanitized : [...defaultRoomPlaylistIds];
+  if (nextPlaylistIds.join(",") === base.playlistIds.join(",")) {
+    return base;
+  }
+  const at = nowMs();
+  const rounds = loadRoundsForPlaylistIds(nextPlaylistIds);
+
+  const nextState = {
+    ...base,
+    phase: "LISTEN" as const,
+    roundIndex: 0,
+    phaseStartedAt: at,
+    phaseEndsAt: at,
+    guessSubmissions: {},
+    timelineSubmissions: {},
+    playlistIds: nextPlaylistIds,
+    rounds,
+    preloadReadiness: {},
+    timelineRoundIds: [],
+    scores: {},
+    roundBreakdowns: {},
+    updatedAt: at,
   };
 
   return setStoredRoomState(roomId, nextState);

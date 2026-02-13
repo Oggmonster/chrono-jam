@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { defaultPlaylistIds } from "~/lib/gamepack";
 import { mockRounds } from "~/lib/mock-room";
 import { buildTimelineEntries, clampTimelineInsertIndex, isTimelineInsertCorrect } from "~/lib/timeline";
+
+export type RoomRound = {
+  id: string;
+  trackId: string;
+  title: string;
+  artistId: string;
+  artist: string;
+  year: number;
+  spotifyUri: string;
+  startMs: number;
+};
 
 export type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
 export type RoomLifecycle = "lobby" | "running" | "finished";
@@ -70,6 +82,8 @@ export type RoomState = {
   guessSubmissions: Record<string, GuessSubmission>;
   timelineSubmissions: Record<string, TimelineSubmission>;
   preloadReadiness: Record<string, PreloadReadiness>;
+  playlistIds: string[];
+  rounds: RoomRound[];
   timelineRoundIds: string[];
   scores: Record<string, number>;
   roundBreakdowns: Record<string, RoundBreakdown>;
@@ -95,12 +109,16 @@ type RoomCommand =
         PreloadReadiness,
         "playerId" | "gamePackLoaded" | "autocompleteLoaded" | "gamePackHash"
       >;
+    }
+  | {
+      type: "update_playlist_ids";
+      playlistIds: string[];
     };
 
 type RoomHookResult = {
   state: RoomState;
   now: number;
-  round: (typeof mockRounds)[number];
+  round: RoomRound;
   remainingMs: number;
   controls: {
     startGame: () => void;
@@ -121,6 +139,7 @@ type RoomHookResult = {
         "playerId" | "gamePackLoaded" | "autocompleteLoaded" | "gamePackHash"
       >,
     ) => void;
+    updatePlaylistIds: (playlistIds: string[]) => void;
   };
 };
 
@@ -133,6 +152,19 @@ const phaseDurationsMs: Record<GamePhase, number> = {
   REVEAL: 8_000,
   INTERMISSION: 5_000,
 };
+
+function fallbackRounds(): RoomRound[] {
+  return mockRounds.map((round) => ({
+    id: round.id,
+    trackId: round.trackId,
+    title: round.title,
+    artistId: round.artistId,
+    artist: round.artist,
+    year: round.year,
+    spotifyUri: round.spotifyUri,
+    startMs: round.startMs,
+  }));
+}
 
 const scoringMaxPoints = {
   track: 1_000,
@@ -198,18 +230,58 @@ function normalizeRoomState(state: RoomState): RoomState {
         ),
       ]
     : [...new Set(state.participants.map((participant) => participant.id))];
+  const playlistIds = Array.isArray(state.playlistIds)
+    ? [
+        ...new Set(
+          state.playlistIds.filter(
+            (playlistId): playlistId is string =>
+              typeof playlistId === "string" && playlistId.trim().length > 0,
+          ),
+        ),
+      ]
+    : [...defaultPlaylistIds];
+  const rounds = Array.isArray(state.rounds)
+    ? state.rounds.filter(
+        (round): round is RoomRound =>
+          typeof round?.id === "string" &&
+          round.id.trim().length > 0 &&
+          typeof round?.trackId === "string" &&
+          round.trackId.trim().length > 0 &&
+          typeof round?.title === "string" &&
+          round.title.trim().length > 0 &&
+          typeof round?.artistId === "string" &&
+          round.artistId.trim().length > 0 &&
+          typeof round?.artist === "string" &&
+          round.artist.trim().length > 0 &&
+          typeof round?.year === "number" &&
+          Number.isFinite(round.year) &&
+          typeof round?.spotifyUri === "string" &&
+          round.spotifyUri.trim().length > 0 &&
+          typeof round?.startMs === "number" &&
+          Number.isFinite(round.startMs),
+      )
+    : [];
+  const safeRounds = rounds.length > 0 ? rounds : fallbackRounds();
+  const roundIdSet = new Set(safeRounds.map((round) => round.id));
+  const parsedRoundIndex = Number.isFinite(Number(state.roundIndex)) ? Math.floor(Number(state.roundIndex)) : 0;
+  const maxRoundIndex = Math.max(0, safeRounds.length - 1);
 
   return {
     ...state,
     phase,
+    roundIndex: Math.max(0, Math.min(maxRoundIndex, parsedRoundIndex)),
     allowedPlayerIds,
+    playlistIds: playlistIds.length > 0 ? playlistIds : [...defaultPlaylistIds],
+    rounds: safeRounds,
     guessSubmissions:
       state.guessSubmissions && typeof state.guessSubmissions === "object" ? state.guessSubmissions : {},
     timelineSubmissions:
       state.timelineSubmissions && typeof state.timelineSubmissions === "object" ? state.timelineSubmissions : {},
     preloadReadiness:
       state.preloadReadiness && typeof state.preloadReadiness === "object" ? state.preloadReadiness : {},
-    timelineRoundIds: Array.isArray(state.timelineRoundIds) ? state.timelineRoundIds : [],
+    timelineRoundIds: Array.isArray(state.timelineRoundIds)
+      ? state.timelineRoundIds.filter((roundId) => roundIdSet.has(roundId))
+      : [],
     scores: state.scores && typeof state.scores === "object" ? state.scores : {},
     roundBreakdowns:
       state.roundBreakdowns && typeof state.roundBreakdowns === "object" ? state.roundBreakdowns : {},
@@ -232,6 +304,9 @@ function shouldApplyRemoteState(current: RoomState, incoming: RoomState) {
     incoming.phaseEndsAt !== current.phaseEndsAt ||
     incoming.participants.length !== current.participants.length ||
     incoming.allowedPlayerIds.join(",") !== current.allowedPlayerIds.join(",") ||
+    incoming.playlistIds.join(",") !== current.playlistIds.join(",") ||
+    incoming.rounds.length !== current.rounds.length ||
+    incoming.rounds.map((round) => round.id).join(",") !== current.rounds.map((round) => round.id).join(",") ||
     Object.keys(incoming.guessSubmissions).length !== Object.keys(current.guessSubmissions).length ||
     Object.keys(incoming.timelineSubmissions).length !== Object.keys(current.timelineSubmissions).length ||
     JSON.stringify(incoming.preloadReadiness) !== JSON.stringify(current.preloadReadiness) ||
@@ -259,6 +334,8 @@ export function createLobbyState(roomId: string, at = nowMs()): RoomState {
     guessSubmissions: {},
     timelineSubmissions: {},
     preloadReadiness: {},
+    playlistIds: [...defaultPlaylistIds],
+    rounds: fallbackRounds(),
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},
@@ -306,7 +383,7 @@ export function advanceRoomPhase(state: RoomState, at = nowMs()): RoomState {
   const nextPhase = phaseOrder[(phaseIndex + 1) % phaseOrder.length];
 
   if (state.phase === "INTERMISSION") {
-    const isLastRound = state.roundIndex >= mockRounds.length - 1;
+    const isLastRound = state.roundIndex >= state.rounds.length - 1;
     if (isLastRound) {
       return {
         ...state,
@@ -456,10 +533,10 @@ function timelineSubmissionKey(playerId: string, roundId: string) {
 }
 
 function timelineEntriesForState(state: RoomState) {
-  return buildTimelineEntries(state.timelineRoundIds, mockRounds);
+  return buildTimelineEntries(state.timelineRoundIds, state.rounds);
 }
 
-function isTimelinePlacementCorrect(state: RoomState, round: (typeof mockRounds)[number], insertIndex: number) {
+function isTimelinePlacementCorrect(state: RoomState, round: RoomRound, insertIndex: number) {
   const entries = timelineEntriesForState(state);
   return isTimelineInsertCorrect(entries, round.year, insertIndex);
 }
@@ -675,8 +752,30 @@ function updatePreloadReadinessInState(
   };
 }
 
+function updatePlaylistIdsInState(roomState: RoomState, playlistIds: string[]) {
+  const sanitized = [
+    ...new Set(
+      playlistIds
+        .map((playlistId) => playlistId.trim())
+        .filter((playlistId) => playlistId.length > 0),
+    ),
+  ];
+  const nextPlaylistIds = sanitized.length > 0 ? sanitized : [...defaultPlaylistIds];
+  if (nextPlaylistIds.join(",") === roomState.playlistIds.join(",")) {
+    return roomState;
+  }
+
+  return {
+    ...roomState,
+    playlistIds: nextPlaylistIds,
+    preloadReadiness: {},
+    updatedAt: roomState.updatedAt,
+  };
+}
+
 function getActiveRound(state: RoomState) {
-  return mockRounds[Math.min(state.roundIndex, mockRounds.length - 1)]!;
+  const rounds = state.rounds.length > 0 ? state.rounds : fallbackRounds();
+  return rounds[Math.min(state.roundIndex, rounds.length - 1)]!;
 }
 
 export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
@@ -956,6 +1055,28 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
           .catch(() => {
             // Best-effort in local dev.
           });
+      },
+      updatePlaylistIds: (playlistIds: string[]) => {
+        if (role !== "host") {
+          return;
+        }
+
+        setState((prevState) => {
+          const nextState = updatePlaylistIdsInState(prevState, playlistIds);
+          if (nextState !== prevState) {
+            void postRoomCommand(roomId, {
+              type: "update_playlist_ids",
+              playlistIds,
+            })
+              .then((remote) => {
+                syncRemoteIfNewer(remote);
+              })
+              .catch(() => {
+                // Best-effort in local dev.
+              });
+          }
+          return nextState;
+        });
       },
     }),
     [role, roomId, sendStateToServer, syncRemoteIfNewer],

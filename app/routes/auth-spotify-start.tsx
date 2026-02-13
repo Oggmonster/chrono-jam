@@ -21,7 +21,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const requestUrl = new URL(request.url);
   const room = requestUrl.searchParams.get("room") ?? "";
-  const forceConsent = requestUrl.searchParams.get("force") === "1";
+  const playlists = requestUrl.searchParams.get("playlists") ?? "";
   const state = randomState();
   const redirectUri = getSpotifyRedirectUri(request);
 
@@ -31,11 +31,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   authorizeUrl.searchParams.set("scope", getSpotifyScopeParam());
   authorizeUrl.searchParams.set("redirect_uri", redirectUri);
   authorizeUrl.searchParams.set("state", state);
-  if (forceConsent) {
-    authorizeUrl.searchParams.set("show_dialog", "true");
-  }
   if (room) {
     authorizeUrl.searchParams.set("room", room);
+  }
+  if (playlists) {
+    authorizeUrl.searchParams.set("playlists", playlists);
   }
 
   return redirect(authorizeUrl.toString(), {

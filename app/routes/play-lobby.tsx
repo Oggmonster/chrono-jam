@@ -23,7 +23,7 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
   const running = room.state.lifecycle === "running";
   const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
   usePlayerPresence(playerSession, room.controls);
-  const preload = useLobbyPreload(roomId, room.state.lifecycle === "lobby");
+  const preload = useLobbyPreload(roomId, room.state.lifecycle === "lobby", room.state.playlistIds);
 
   useEffect(() => {
     setPlayerSession(getPlayerSession(roomId));
@@ -79,6 +79,9 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
             {running ? `LIVE: ${phaseLabel(room.state.phase)}` : "Waiting for host"}
           </Badge>
         </div>
+        <p className="mt-2 text-center text-xs font-semibold text-[#4f5fa2]">
+          Playlists: {room.state.playlistIds.join(", ")}
+        </p>
 
         <Card className="mt-5">
           <CardHeader>

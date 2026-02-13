@@ -11,8 +11,12 @@ import { Input } from "~/components/ui/input";
 import { Progress } from "~/components/ui/progress";
 import { searchAutocomplete, type AutocompleteItem } from "~/lib/autocomplete";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
-import { buildMockAutocompletePack } from "~/lib/mock-autocomplete";
-import { mockRounds } from "~/lib/mock-room";
+import {
+  getCachedCatalogAutocompletePack,
+  loadCatalogAutocompletePack,
+  loadGamePack,
+  type CatalogAutocompletePack,
+} from "~/lib/gamepack";
 import { usePlayerPresence } from "~/lib/player-presence";
 import { getPlayerSession, type PlayerSession } from "~/lib/player-session";
 import {
@@ -44,8 +48,24 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const room = useRoomState(roomId, "player");
   const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
   usePlayerPresence(playerSession, room.controls);
-
-  const autocomplete = useMemo(() => buildMockAutocompletePack(), []);
+  const [autocomplete, setAutocomplete] = useState<CatalogAutocompletePack>(() => {
+    const cached = getCachedCatalogAutocompletePack();
+    return (
+      cached ?? {
+        tracks: { items: [], prefixIndex: {} },
+        artists: { items: [], prefixIndex: {} },
+      }
+    );
+  });
+  const playlistKey = useMemo(() => room.state.playlistIds.join(","), [room.state.playlistIds]);
+  const playlistIdsForLoad = useMemo(
+    () =>
+      playlistKey
+        .split(",")
+        .map((playlistId) => playlistId.trim())
+        .filter((playlistId) => playlistId.length > 0),
+    [playlistKey],
+  );
   const trackLookup = useMemo<Record<string, AutocompleteItem>>(
     () =>
       Object.fromEntries(autocomplete.tracks.items.map((item) => [item.id, item] as const)) as Record<
@@ -98,8 +118,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     Boolean(currentSubmission);
 
   const timelineEntries = useMemo(
-    () => buildTimelineEntries(room.state.timelineRoundIds, mockRounds),
-    [room.state.timelineRoundIds],
+    () => buildTimelineEntries(room.state.timelineRoundIds, room.state.rounds),
+    [room.state.rounds, room.state.timelineRoundIds],
   );
 
   const trackSuggestions = useMemo(() => {
@@ -119,6 +139,38 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   useEffect(() => {
     setPlayerSession(getPlayerSession(roomId));
   }, [roomId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateAutocomplete = async () => {
+      const cached = getCachedCatalogAutocompletePack();
+      if (cached) {
+        setAutocomplete(cached);
+        return;
+      }
+
+      try {
+        const loadedPack = await loadGamePack(roomId, playlistIdsForLoad);
+        if (cancelled) {
+          return;
+        }
+
+        const loadedAutocomplete = await loadCatalogAutocompletePack(loadedPack.pack.meta.hash);
+        if (!cancelled) {
+          setAutocomplete(loadedAutocomplete);
+        }
+      } catch {
+        // Keep empty suggestions if catalog loading fails.
+      }
+    };
+
+    void hydrateAutocomplete();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [playlistIdsForLoad, roomId]);
 
   useEffect(() => {
     setTrackQuery("");

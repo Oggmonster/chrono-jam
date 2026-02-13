@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Route } from "./+types/host-lobby";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { PlayerChip } from "~/components/player-chip";
 import { Ribbon } from "~/components/ribbon";
@@ -17,6 +17,7 @@ export function meta({}: Route.MetaArgs) {
 export default function HostLobby({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const room = useRoomState(roomId, "host");
   const [spotifyTokenPresent, setSpotifyTokenPresent] = useState(false);
   const [spotifyTokenStatus, setSpotifyTokenStatus] = useState("");
@@ -37,9 +38,24 @@ export default function HostLobby({ params }: Route.ComponentProps) {
       }),
     [room.state.participants, room.state.preloadReadiness],
   );
+  const selectedPlaylistIdsFromQuery = useMemo(() => {
+    const param = searchParams.get("playlists") ?? "";
+    return [
+      ...new Set(
+        param
+          .split(",")
+          .map((playlistId) => playlistId.trim())
+          .filter((playlistId) => playlistId.length > 0),
+      ),
+    ];
+  }, [searchParams]);
+  const playlistSelectionPending =
+    room.state.lifecycle === "lobby" &&
+    selectedPlaylistIdsFromQuery.length > 0 &&
+    selectedPlaylistIdsFromQuery.join(",") !== room.state.playlistIds.join(",");
   const readyCount = readinessRows.filter((entry) => entry.ready).length;
   const allReady = readinessRows.length > 0 && readyCount === readinessRows.length;
-  const canStartNormally = room.state.participants.length === 0 || allReady;
+  const canStartNormally = !playlistSelectionPending && (room.state.participants.length === 0 || allReady);
 
   const checkTokenStatus = async () => {
     const stored = readStoredSpotifyToken();
@@ -89,6 +105,22 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   }, [navigate, room.state.lifecycle, roomId]);
 
   useEffect(() => {
+    if (room.state.lifecycle !== "lobby") {
+      return;
+    }
+
+    if (selectedPlaylistIdsFromQuery.length === 0) {
+      return;
+    }
+
+    if (selectedPlaylistIdsFromQuery.join(",") === room.state.playlistIds.join(",")) {
+      return;
+    }
+
+    room.controls.updatePlaylistIds(selectedPlaylistIdsFromQuery);
+  }, [room.controls, room.state.lifecycle, room.state.playlistIds, selectedPlaylistIdsFromQuery]);
+
+  useEffect(() => {
     void checkTokenStatus();
     const timer = window.setInterval(() => {
       void checkTokenStatus();
@@ -106,6 +138,9 @@ export default function HostLobby({ params }: Route.ComponentProps) {
 
         <p className="mt-4 text-center text-2xl font-bold text-[#2e2e79]">
           Room Code: <span className="text-[#d84837]">{roomId}</span>
+        </p>
+        <p className="mt-2 text-center text-xs font-semibold text-[#4f5fa2]">
+          Playlists: {room.state.playlistIds.join(", ")}
         </p>
 
         <div className="mt-4 flex justify-center">
@@ -200,7 +235,9 @@ export default function HostLobby({ params }: Route.ComponentProps) {
         </div>
         {!canStartNormally ? (
           <p className="mt-2 text-center text-xs font-semibold text-[#8d2e2a]">
-            Waiting for preload completion. Use Force Start to override.
+            {playlistSelectionPending
+              ? "Applying selected playlist pack to this room..."
+              : "Waiting for preload completion. Use Force Start to override."}
           </p>
         ) : null}
 

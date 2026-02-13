@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { refreshSpotifyAccessToken } from "~/lib/spotify-token";
 
 declare global {
   interface Window {
@@ -78,6 +79,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
   const [connected, setConnected] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const refreshingTokenRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
     tokenRef.current = accessToken;
@@ -90,7 +92,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
   }, []);
 
   const initialize = useCallback(async () => {
-    if (!accessToken) {
+    if (!tokenRef.current.trim()) {
       setError("Missing Spotify access token. Add it in host setup first.");
       return false;
     }
@@ -114,10 +116,14 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
       player.addListener("ready", ({ device_id }) => {
         setDeviceId(device_id);
         setReady(true);
+        setConnected(true);
       });
 
       player.addListener("not_ready", () => {
         setConnected(false);
+        setReady(false);
+        setDeviceId(null);
+        activatingDeviceRef.current = null;
       });
 
       player.addListener("initialization_error", ({ message }) => {
@@ -156,7 +162,68 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
     }
 
     return true;
-  }, [accessToken]);
+  }, []);
+
+  const refreshToken = useCallback(async () => {
+    if (refreshingTokenRef.current) {
+      return refreshingTokenRef.current;
+    }
+
+    const run = (async () => {
+      try {
+        const refreshed = await refreshSpotifyAccessToken();
+        tokenRef.current = refreshed.accessToken.trim();
+        setError(null);
+        return Boolean(tokenRef.current);
+      } catch {
+        setError("Spotify token refresh failed. Reconnect Spotify in host setup.");
+        return false;
+      } finally {
+        refreshingTokenRef.current = null;
+      }
+    })();
+
+    refreshingTokenRef.current = run;
+    return run;
+  }, []);
+
+  const spotifyPut = useCallback(
+    async (path: string, body?: unknown, retry = true) => {
+      if (!tokenRef.current) {
+        return { ok: false, status: 401, response: null as Response | null };
+      }
+
+      const response = await fetch(`https://api.spotify.com/v1${path}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${tokenRef.current}`,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+
+      if (response.status === 401 && retry) {
+        const refreshed = await refreshToken();
+        if (!refreshed) {
+          return { ok: false, status: 401, response };
+        }
+
+        const retryResponse = await fetch(`https://api.spotify.com/v1${path}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${tokenRef.current}`,
+            ...(body ? { "Content-Type": "application/json" } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+
+        return { ok: retryResponse.ok, status: retryResponse.status, response: retryResponse };
+      }
+
+      return { ok: response.ok, status: response.status, response };
+    },
+    [refreshToken],
+  );
 
   const activateDevice = useCallback(async (targetDeviceId: string) => {
     if (!tokenRef.current || !targetDeviceId) {
@@ -168,23 +235,16 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
     }
 
     activatingDeviceRef.current = targetDeviceId;
-    const response = await fetch("https://api.spotify.com/v1/me/player", {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${tokenRef.current}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const { ok, status } = await spotifyPut("/me/player", {
         device_ids: [targetDeviceId],
         play: false,
-      }),
     });
 
-    if (!response.ok) {
+    if (!ok) {
       activatingDeviceRef.current = null;
-      setError(`Spotify device activate failed (${response.status}).`);
+      setError(`Spotify device activate failed (${status}).`);
     }
-  }, []);
+  }, [spotifyPut]);
 
   useEffect(() => {
     if (!connected || !deviceId) {
@@ -203,34 +263,26 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
 
       await activateDevice(deviceId);
 
-      const response = await fetch(
-        `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${tokenRef.current}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            uris: [trackUri],
-            position_ms: startMs,
-          }),
-        },
-      );
+      const { ok, status, response } = await spotifyPut(`/me/player/play?device_id=${deviceId}`, {
+        uris: [trackUri],
+        position_ms: startMs,
+      });
 
-      if (!response.ok) {
+      if (!ok) {
         let errorDetail = "";
-        try {
-          const payload = (await response.json()) as { error?: { message?: string } };
-          if (payload?.error?.message) {
-            errorDetail = ` ${payload.error.message}`;
+        if (response) {
+          try {
+            const payload = (await response.json()) as { error?: { message?: string } };
+            if (payload?.error?.message) {
+              errorDetail = ` ${payload.error.message}`;
+            }
+          } catch {
+            // Ignore parse failures.
           }
-        } catch {
-          // Ignore parse failures.
         }
 
         setError(
-          `Spotify play failed (${response.status}). Ensure scopes include streaming and user-modify-playback-state.${errorDetail}`,
+          `Spotify play failed (${status}). Ensure scopes include streaming and user-modify-playback-state.${errorDetail}`,
         );
         return false;
       }
@@ -246,13 +298,8 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
       return;
     }
 
-    await fetch(`https://api.spotify.com/v1/me/player/pause?device_id=${deviceId}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${tokenRef.current}`,
-      },
-    });
-  }, [deviceId]);
+    await spotifyPut(`/me/player/pause?device_id=${deviceId}`);
+  }, [deviceId, spotifyPut]);
 
   const disconnect = useCallback(() => {
     playerRef.current?.disconnect();

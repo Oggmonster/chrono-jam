@@ -1,0 +1,23 @@
+{
+  "kind": "playlist-catalog",
+  "playlists": [
+    {
+      "id": "core-pop",
+      "name": "Core Pop",
+      "version": 1,
+      "trackCount": 5,
+      "artistCount": 5,
+      "roundCount": 5
+    },
+    {
+      "id": "mega-mix",
+      "name": "Jobba, jobba, jobba",
+      "version": 1,
+      "sourcePlaylistId": "2SV5isuD93zA7CH2cgg11o",
+      "sourcePlaylistName": "Jobba, jobba, jobba",
+      "trackCount": 353,
+      "artistCount": 338,
+      "roundCount": 353
+    }
+  ]
+}

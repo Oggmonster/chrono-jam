@@ -3,6 +3,7 @@ import {
   getRoomState,
   removeParticipant,
   replaceRoomState,
+  updateRoomPlaylistIds,
   upsertPreloadReadiness,
   upsertGuessSubmission,
   upsertTimelineSubmission,
@@ -29,6 +30,10 @@ type RoomCommand =
         autocompleteLoaded: boolean;
         gamePackHash: string;
       };
+    }
+  | {
+      type: "update_playlist_ids";
+      playlistIds: string[];
     };
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -109,6 +114,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         return new Response("Invalid preload readiness payload", { status: 400 });
       }
       return Response.json(upsertPreloadReadiness(roomId, readiness));
+    }
+    case "update_playlist_ids": {
+      if (!Array.isArray(command.playlistIds)) {
+        return new Response("Invalid playlist ids payload", { status: 400 });
+      }
+      return Response.json(updateRoomPlaylistIds(roomId, command.playlistIds));
     }
     default:
       return new Response("Unsupported command", { status: 400 });

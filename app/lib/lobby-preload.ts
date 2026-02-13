@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { loadGamePack, type GamePackLoadResult } from "~/lib/gamepack";
+import {
+  loadCatalogAutocompletePack,
+  loadGamePack,
+  type GamePackLoadResult,
+} from "~/lib/gamepack";
 
 type PreloadSource = GamePackLoadResult["source"] | "none";
 
@@ -14,16 +18,6 @@ export type LobbyPreloadState = {
   ready: boolean;
 };
 
-const preloadStepDelayMs = {
-  autocomplete: 120,
-};
-
-function wait(ms: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 function initialState(): LobbyPreloadState {
   return {
     gamePackLoaded: false,
@@ -36,8 +30,16 @@ function initialState(): LobbyPreloadState {
   };
 }
 
-export function useLobbyPreload(roomId: string, enabled: boolean): LobbyPreloadState {
+function normalizePlaylistIds(playlistIds: string[]) {
+  const sanitized = playlistIds
+    .map((playlistId) => playlistId.trim())
+    .filter((playlistId) => playlistId.length > 0);
+  return [...new Set(sanitized)];
+}
+
+export function useLobbyPreload(roomId: string, enabled: boolean, playlistIds: string[]): LobbyPreloadState {
   const [state, setState] = useState<LobbyPreloadState>(() => initialState());
+  const playlistKey = useMemo(() => JSON.stringify(normalizePlaylistIds(playlistIds)), [playlistIds]);
 
   useEffect(() => {
     if (!enabled) {
@@ -55,7 +57,8 @@ export function useLobbyPreload(roomId: string, enabled: boolean): LobbyPreloadS
 
     const run = async () => {
       try {
-        const loaded = await loadGamePack(roomId);
+        const resolvedPlaylistIds = JSON.parse(playlistKey) as string[];
+        const loaded = await loadGamePack(roomId, resolvedPlaylistIds);
         if (cancelled) {
           return;
         }
@@ -67,7 +70,7 @@ export function useLobbyPreload(roomId: string, enabled: boolean): LobbyPreloadS
           gamePackSource: loaded.source,
         }));
 
-        await wait(preloadStepDelayMs.autocomplete);
+        await loadCatalogAutocompletePack(loaded.pack.meta.hash);
         if (cancelled) {
           return;
         }
@@ -94,7 +97,7 @@ export function useLobbyPreload(roomId: string, enabled: boolean): LobbyPreloadS
     return () => {
       cancelled = true;
     };
-  }, [enabled, roomId]);
+  }, [enabled, playlistKey, roomId]);
 
   const ready = useMemo(
     () => state.gamePackLoaded && state.autocompleteLoaded,
