@@ -24,6 +24,11 @@ type BaseBatteryAsset = {
   artists: CatalogEntry[];
 };
 
+type BaseBatteryVersionAsset = {
+  kind: "base-battery-version";
+  version: number;
+};
+
 type PlaylistPackAsset = {
   kind: "playlist-pack";
   playlistId: string;
@@ -77,7 +82,7 @@ const storeMeta = "meta";
 const storeTracks = "tracks";
 const storeArtists = "artists";
 const storePacks = "packs";
-const baseBatteryVersion = 1;
+const defaultBaseBatteryVersion = 1;
 
 function fnv1a(input: string) {
   let hash = 2166136261;
@@ -222,15 +227,35 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
   await transactionDone(tx);
 }
 
-async function ensureBaseBattery(db: IDBDatabase): Promise<{ source: DataSource; hash: string }> {
-  const metaKey = "base-battery";
-  const existing = await readMeta(db, metaKey);
-  if (existing && existing.version === baseBatteryVersion && existing.hash) {
-    return { source: "cache", hash: existing.hash };
+async function resolveBaseBatteryVersion() {
+  try {
+    const asset = await fetchJsonAsset<BaseBatteryVersionAsset>("/game-data/base-battery.latest.json");
+    if (
+      asset.kind === "base-battery-version" &&
+      Number.isFinite(asset.version) &&
+      asset.version >= 1
+    ) {
+      return Math.floor(asset.version);
+    }
+  } catch {
+    // Fall through to default static version.
   }
 
-  const asset = await fetchJsonAsset<BaseBatteryAsset>(`/game-data/base-battery.v${baseBatteryVersion}.json`);
-  if (asset.kind !== "base-battery" || asset.version !== baseBatteryVersion) {
+  return defaultBaseBatteryVersion;
+}
+
+async function ensureBaseBattery(
+  db: IDBDatabase,
+  version: number,
+): Promise<{ source: DataSource; hash: string; version: number }> {
+  const metaKey = "base-battery";
+  const existing = await readMeta(db, metaKey);
+  if (existing && existing.version === version && existing.hash) {
+    return { source: "cache", hash: existing.hash, version };
+  }
+
+  const asset = await fetchJsonAsset<BaseBatteryAsset>(`/game-data/base-battery.v${version}.json`);
+  if (asset.kind !== "base-battery" || asset.version !== version) {
     throw new Error("Invalid base battery asset");
   }
 
@@ -245,7 +270,7 @@ async function ensureBaseBattery(db: IDBDatabase): Promise<{ source: DataSource;
     updatedAt: Date.now(),
   });
 
-  return { source: "fresh", hash };
+  return { source: "fresh", hash, version };
 }
 
 async function ensurePlaylistPack(db: IDBDatabase, playlistId: string): Promise<{ source: DataSource; hash: string; pack: PlaylistPackAsset }> {
@@ -307,7 +332,7 @@ function fallbackGamePack(roomId: string): GamePack {
       createdAt: Date.now(),
       roundCount: rounds.length,
       playlistIds: [...defaultPlaylistIds],
-      batteryVersion: baseBatteryVersion,
+      batteryVersion: defaultBaseBatteryVersion,
     },
     rounds,
   };
@@ -320,7 +345,8 @@ export async function loadGamePack(
   try {
     const db = await openCatalogDb();
     const safePlaylistIds = playlistIds.length > 0 ? playlistIds : [...defaultPlaylistIds];
-    const battery = await ensureBaseBattery(db);
+    const baseBatteryVersion = await resolveBaseBatteryVersion();
+    const battery = await ensureBaseBattery(db, baseBatteryVersion);
     const playlistResults = await Promise.all(safePlaylistIds.map((playlistId) => ensurePlaylistPack(db, playlistId)));
 
     const allRounds = playlistResults.flatMap((result) => result.pack.rounds);
@@ -349,7 +375,7 @@ export async function loadGamePack(
           createdAt: Date.now(),
           roundCount: dedupedRounds.length,
           playlistIds: safePlaylistIds,
-          batteryVersion: baseBatteryVersion,
+          batteryVersion: battery.version,
         },
         rounds: dedupedRounds,
       },

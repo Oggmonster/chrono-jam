@@ -48,6 +48,45 @@ a {
   padding: clamp(1rem, 2.7vw, 2rem);
 }
 
+.jam-page-home {
+  position: relative;
+  overflow: hidden;
+}
+
+.jam-page-home::before,
+.jam-page-home::after {
+  content: "";
+  position: fixed;
+  inset: -12vh -10vw;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.jam-page-home::before {
+  background-image:
+    radial-gradient(circle at 8% 15%, #ff8f6d 0 5.2rem, transparent 5.3rem),
+    radial-gradient(circle at 18% 72%, #5cd5f0 0 4.2rem, transparent 4.3rem),
+    radial-gradient(circle at 84% 16%, #f6d45b 0 4.8rem, transparent 4.9rem),
+    radial-gradient(circle at 90% 72%, #5fd389 0 3.6rem, transparent 3.7rem),
+    radial-gradient(circle at 54% 10%, #ff73af 0 3rem, transparent 3.1rem),
+    radial-gradient(circle at 36% 90%, #7a85ff 0 2.8rem, transparent 2.9rem);
+  opacity: 0.55;
+}
+
+.jam-page-home::after {
+  background-image:
+    conic-gradient(from 140deg at 22% 38%, #ffcf66 0deg 90deg, transparent 90deg 360deg),
+    conic-gradient(from -25deg at 78% 58%, #76d3ff 0deg 110deg, transparent 110deg 360deg),
+    linear-gradient(130deg, transparent 20%, #ffffff22 22% 24%, transparent 26%),
+    linear-gradient(40deg, transparent 55%, #ffffff1f 57% 59%, transparent 61%);
+  opacity: 0.42;
+}
+
+.jam-page-home > * {
+  position: relative;
+  z-index: 1;
+}
+
 .jam-stage {
   width: min(58rem, 100%);
   border-radius: 2rem;

@@ -2,6 +2,7 @@ import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
 export default [
   index("routes/home.tsx"),
+  route("admin", "routes/admin.tsx"),
   route("auth/spotify/start", "routes/auth-spotify-start.tsx"),
   route("auth/spotify/callback", "routes/auth-spotify-callback.tsx"),
   route("auth/spotify/refresh", "routes/auth-spotify-refresh.tsx"),

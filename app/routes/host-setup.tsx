@@ -124,7 +124,7 @@ export default function HostSetup() {
     navigate(`/host/lobby/${normalized}`);
   };
 
-  const connectHref = `/auth/spotify/start?room=${encodeURIComponent(normalizeRoomCode(roomCode) || "")}`;
+  const connectHref = `/auth/spotify/start?room=${encodeURIComponent(normalizeRoomCode(roomCode) || "")}&force=1`;
 
   return (
     <main className="jam-page">
@@ -138,7 +138,7 @@ export default function HostSetup() {
               ChronoJam host playback uses the Spotify Web Playback SDK.
             </CardDescription>
             <Badge variant="warning" className="w-fit">
-              Required scopes: streaming, user-modify-playback-state, user-read-playback-state
+              Required scopes: streaming, user-modify-playback-state, user-read-playback-state, playlist-read-private, playlist-read-collaborative
             </Badge>
             {statusText ? <Badge variant="success" className="w-fit">{statusText}</Badge> : null}
           </CardHeader>

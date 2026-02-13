@@ -4,6 +4,8 @@ const spotifyScopes = [
   "user-read-private",
   "user-read-playback-state",
   "user-modify-playback-state",
+  "playlist-read-private",
+  "playlist-read-collaborative",
 ];
 
 export const spotifyStateCookieName = "chronojam_spotify_state";
