@@ -3,6 +3,11 @@ import {
   loadRoundsForPlaylistIds,
   type PlaylistRound,
 } from "~/lib/playlist-rounds.server";
+import {
+  clampGameSongCount,
+  defaultGameSongCount,
+  parseGameSongCount,
+} from "~/lib/game-settings";
 import { buildTimelineEntries, clampTimelineInsertIndex } from "~/lib/timeline";
 
 const defaultRoomPlaylistIds = [...defaultPackPlaylistIds];
@@ -76,6 +81,7 @@ export type StoredRoomState = {
   timelineSubmissions: Record<string, StoredTimelineSubmission>;
   preloadReadiness: Record<string, StoredPreloadReadiness>;
   playlistIds: string[];
+  gameSongCount: number;
   rounds: PlaylistRound[];
   timelineRoundIds: string[];
   scores: Record<string, number>;
@@ -150,7 +156,77 @@ function colorForParticipantIndex(index: number) {
   return participantColors[index % participantColors.length]!;
 }
 
+function randomSampleRounds(rounds: PlaylistRound[], count: number) {
+  if (rounds.length <= count) {
+    return [...rounds];
+  }
+
+  const shuffled = [...rounds];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const current = shuffled[index]!;
+    shuffled[index] = shuffled[swapIndex]!;
+    shuffled[swapIndex] = current;
+  }
+
+  return shuffled.slice(0, count);
+}
+
+function buildRoomRounds(
+  playlistIds: string[],
+  requestedSongCount: number | null | undefined,
+  options: { preferredRoundIds?: string[] } = {},
+) {
+  const availableRounds = loadRoundsForPlaylistIds(playlistIds);
+  const gameSongCount = clampGameSongCount(requestedSongCount, availableRounds.length, defaultGameSongCount);
+  const preferredRoundIds = options.preferredRoundIds ?? [];
+
+  if (preferredRoundIds.length === 0) {
+    return {
+      gameSongCount,
+      rounds: randomSampleRounds(availableRounds, gameSongCount),
+    };
+  }
+
+  const byRoundId = new Map(availableRounds.map((round) => [round.id, round] as const));
+  const selectedRoundIds = new Set<string>();
+  const preferredRounds: PlaylistRound[] = [];
+  for (const rawRoundId of preferredRoundIds) {
+    const roundId = rawRoundId.trim();
+    if (!roundId || selectedRoundIds.has(roundId)) {
+      continue;
+    }
+
+    const round = byRoundId.get(roundId);
+    if (!round) {
+      continue;
+    }
+
+    selectedRoundIds.add(round.id);
+    preferredRounds.push(round);
+    if (preferredRounds.length >= gameSongCount) {
+      break;
+    }
+  }
+
+  if (preferredRounds.length >= gameSongCount) {
+    return {
+      gameSongCount,
+      rounds: preferredRounds.slice(0, gameSongCount),
+    };
+  }
+
+  const remainingRounds = availableRounds.filter((round) => !selectedRoundIds.has(round.id));
+  const randomRemainder = randomSampleRounds(remainingRounds, gameSongCount - preferredRounds.length);
+  return {
+    gameSongCount,
+    rounds: [...preferredRounds, ...randomRemainder],
+  };
+}
+
 export function createStoredRoomState(roomId: string, at = nowMs()): StoredRoomState {
+  const playlistIds = [...defaultRoomPlaylistIds];
+  const { rounds, gameSongCount } = buildRoomRounds(playlistIds, defaultGameSongCount);
   return {
     roomId,
     lifecycle: "lobby",
@@ -164,8 +240,9 @@ export function createStoredRoomState(roomId: string, at = nowMs()): StoredRoomS
     guessSubmissions: {},
     timelineSubmissions: {},
     preloadReadiness: {},
-    playlistIds: [...defaultRoomPlaylistIds],
-    rounds: loadRoundsForPlaylistIds([...defaultRoomPlaylistIds]),
+    playlistIds,
+    gameSongCount,
+    rounds,
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},
@@ -286,7 +363,18 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
         ),
       ]
     : [...defaultRoomPlaylistIds];
-  const rounds = loadRoundsForPlaylistIds(playlistIds);
+  const requestedGameSongCount =
+    parseGameSongCount((state as { gameSongCount?: unknown }).gameSongCount) ??
+    (Array.isArray(state.rounds) ? parseGameSongCount(state.rounds.length) : null) ??
+    defaultGameSongCount;
+  const preferredRoundIds = Array.isArray(state.rounds)
+    ? state.rounds
+        .map((round) => (typeof round?.id === "string" ? round.id.trim() : ""))
+        .filter((roundId) => roundId.length > 0)
+    : [];
+  const { rounds, gameSongCount } = buildRoomRounds(playlistIds, requestedGameSongCount, {
+    preferredRoundIds,
+  });
   const roundIdSet = new Set(rounds.map((round) => round.id));
 
   const timelineRoundIds = Array.isArray(state.timelineRoundIds)
@@ -383,6 +471,7 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
     timelineSubmissions,
     preloadReadiness,
     playlistIds: playlistIds.length > 0 ? playlistIds : [...defaultRoomPlaylistIds],
+    gameSongCount,
     rounds,
     timelineRoundIds,
     scores,
@@ -456,19 +545,59 @@ function ensureRoomState(roomId: string, options: { notifyOnPrune?: boolean } = 
   }
 
   if (!Array.isArray(existing.playlistIds) || existing.playlistIds.length === 0) {
+    const playlistIds = [...defaultRoomPlaylistIds];
+    const { rounds, gameSongCount } = buildRoomRounds(
+      playlistIds,
+      parseGameSongCount((existing as { gameSongCount?: unknown }).gameSongCount) ?? defaultGameSongCount,
+    );
     const patched = {
       ...existing,
-      playlistIds: [...defaultRoomPlaylistIds],
-      rounds: loadRoundsForPlaylistIds([...defaultRoomPlaylistIds]),
+      playlistIds,
+      gameSongCount,
+      rounds,
       updatedAt: nowMs(),
     };
     return setStoredRoomState(roomId, patched, { notify: false });
   }
 
-  if (!Array.isArray(existing.rounds) || existing.rounds.length === 0) {
+  if (parseGameSongCount((existing as { gameSongCount?: unknown }).gameSongCount) === null) {
+    const { rounds, gameSongCount } = buildRoomRounds(
+      existing.playlistIds,
+      Array.isArray(existing.rounds) && existing.rounds.length > 0
+        ? existing.rounds.length
+        : defaultGameSongCount,
+      {
+        preferredRoundIds:
+          Array.isArray(existing.rounds) && existing.rounds.length > 0
+            ? existing.rounds
+                .map((round) => (typeof round?.id === "string" ? round.id.trim() : ""))
+                .filter((roundId) => roundId.length > 0)
+            : [],
+      },
+    );
+
     const patched = {
       ...existing,
-      rounds: loadRoundsForPlaylistIds(existing.playlistIds),
+      gameSongCount,
+      rounds,
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!Array.isArray(existing.rounds) || existing.rounds.length === 0 || existing.rounds.length !== existing.gameSongCount) {
+    const { rounds, gameSongCount } = buildRoomRounds(existing.playlistIds, existing.gameSongCount, {
+      preferredRoundIds:
+        Array.isArray(existing.rounds) && existing.rounds.length > 0
+          ? existing.rounds
+              .map((round) => (typeof round?.id === "string" ? round.id.trim() : ""))
+              .filter((roundId) => roundId.length > 0)
+          : [],
+    });
+    const patched = {
+      ...existing,
+      gameSongCount,
+      rounds,
       updatedAt: nowMs(),
     };
     return setStoredRoomState(roomId, patched, { notify: false });
@@ -780,7 +909,9 @@ export function updateRoomPlaylistIds(roomId: string, playlistIds: string[]): St
     return base;
   }
   const at = nowMs();
-  const rounds = loadRoundsForPlaylistIds(nextPlaylistIds);
+  const { rounds, gameSongCount } = buildRoomRounds(nextPlaylistIds, base.gameSongCount, {
+    preferredRoundIds: [],
+  });
 
   const nextState = {
     ...base,
@@ -791,8 +922,47 @@ export function updateRoomPlaylistIds(roomId: string, playlistIds: string[]): St
     guessSubmissions: {},
     timelineSubmissions: {},
     playlistIds: nextPlaylistIds,
+    gameSongCount,
     rounds,
     preloadReadiness: {},
+    timelineRoundIds: [],
+    scores: {},
+    roundBreakdowns: {},
+    updatedAt: at,
+  };
+
+  return setStoredRoomState(roomId, nextState);
+}
+
+export function updateRoomGameSongCount(roomId: string, songCount: number): StoredRoomState {
+  const base = ensureRoomState(roomId, { notifyOnPrune: false });
+  if (base.lifecycle !== "lobby") {
+    return base;
+  }
+
+  const requestedSongCount = parseGameSongCount(songCount);
+  if (requestedSongCount === null) {
+    return base;
+  }
+  if (requestedSongCount === base.gameSongCount) {
+    return base;
+  }
+
+  const { rounds, gameSongCount } = buildRoomRounds(base.playlistIds, requestedSongCount, {
+    preferredRoundIds: [],
+  });
+
+  const at = nowMs();
+  const nextState = {
+    ...base,
+    phase: "LISTEN" as const,
+    roundIndex: 0,
+    phaseStartedAt: at,
+    phaseEndsAt: at,
+    guessSubmissions: {},
+    timelineSubmissions: {},
+    gameSongCount,
+    rounds,
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},

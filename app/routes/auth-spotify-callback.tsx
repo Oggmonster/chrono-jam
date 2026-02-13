@@ -37,6 +37,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const code = callbackUrl.searchParams.get("code");
   const room = callbackUrl.searchParams.get("room");
   const playlists = callbackUrl.searchParams.get("playlists");
+  const songs = callbackUrl.searchParams.get("songs");
 
   const expectedState = parseCookieValue(request.headers.get("Cookie"), spotifyStateCookieName);
   if (!code || !state || !expectedState || state !== expectedState) {
@@ -86,6 +87,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   if (playlists) {
     target.searchParams.set("playlists", playlists);
+  }
+  if (songs) {
+    target.searchParams.set("songs", songs);
   }
 
   const headers = new Headers();

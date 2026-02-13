@@ -26,6 +26,15 @@ export function storeSpotifyToken(accessToken: string, expiresInSeconds: number)
   window.localStorage.setItem(spotifyTokenExpiryKey, String(expiresAt));
 }
 
+export function clearStoredSpotifyToken() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(spotifyTokenKey);
+  window.localStorage.removeItem(spotifyTokenExpiryKey);
+}
+
 export async function refreshSpotifyAccessToken(): Promise<RefreshPayload> {
   const response = await fetch("/auth/spotify/refresh", {
     method: "GET",
@@ -48,4 +57,3 @@ export async function refreshSpotifyAccessToken(): Promise<RefreshPayload> {
 export function isTokenExpiring(expiresAt: number, thresholdMs = 60_000) {
   return !expiresAt || Date.now() + thresholdMs >= expiresAt;
 }
-

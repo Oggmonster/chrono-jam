@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-lobby";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
@@ -7,6 +7,7 @@ import { Ribbon } from "~/components/ribbon";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { parseGameSongCount } from "~/lib/game-settings";
 import { useRoomState } from "~/lib/game-engine";
 import { isTokenExpiring, readStoredSpotifyToken, refreshSpotifyAccessToken } from "~/lib/spotify-token";
 
@@ -22,6 +23,7 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   const [spotifyTokenPresent, setSpotifyTokenPresent] = useState(false);
   const [spotifyTokenStatus, setSpotifyTokenStatus] = useState("");
   const [refreshingToken, setRefreshingToken] = useState(false);
+  const attemptedSongCountSyncRef = useRef<number | null>(null);
   const readinessRows = useMemo(
     () =>
       room.state.participants.map((player) => {
@@ -49,13 +51,24 @@ export default function HostLobby({ params }: Route.ComponentProps) {
       ),
     ];
   }, [searchParams]);
+  const requestedSongCountFromQuery = useMemo(
+    () => parseGameSongCount(searchParams.get("songs")),
+    [searchParams],
+  );
   const playlistSelectionPending =
     room.state.lifecycle === "lobby" &&
     selectedPlaylistIdsFromQuery.length > 0 &&
     selectedPlaylistIdsFromQuery.join(",") !== room.state.playlistIds.join(",");
+  const songCountSelectionPending =
+    room.state.lifecycle === "lobby" &&
+    requestedSongCountFromQuery !== null &&
+    requestedSongCountFromQuery !== room.state.gameSongCount;
   const readyCount = readinessRows.filter((entry) => entry.ready).length;
   const allReady = readinessRows.length > 0 && readyCount === readinessRows.length;
-  const canStartNormally = !playlistSelectionPending && (room.state.participants.length === 0 || allReady);
+  const canStartNormally =
+    !playlistSelectionPending &&
+    !songCountSelectionPending &&
+    (room.state.participants.length === 0 || allReady);
 
   const checkTokenStatus = async () => {
     const stored = readStoredSpotifyToken();
@@ -121,6 +134,41 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   }, [room.controls, room.state.lifecycle, room.state.playlistIds, selectedPlaylistIdsFromQuery]);
 
   useEffect(() => {
+    attemptedSongCountSyncRef.current = null;
+  }, [requestedSongCountFromQuery]);
+
+  useEffect(() => {
+    if (room.state.lifecycle !== "lobby") {
+      return;
+    }
+
+    if (playlistSelectionPending) {
+      return;
+    }
+
+    if (requestedSongCountFromQuery === null) {
+      return;
+    }
+
+    if (requestedSongCountFromQuery === room.state.gameSongCount) {
+      return;
+    }
+
+    if (attemptedSongCountSyncRef.current === requestedSongCountFromQuery) {
+      return;
+    }
+
+    attemptedSongCountSyncRef.current = requestedSongCountFromQuery;
+    room.controls.updateGameSongCount(requestedSongCountFromQuery);
+  }, [
+    playlistSelectionPending,
+    requestedSongCountFromQuery,
+    room.controls,
+    room.state.gameSongCount,
+    room.state.lifecycle,
+  ]);
+
+  useEffect(() => {
     void checkTokenStatus();
     const timer = window.setInterval(() => {
       void checkTokenStatus();
@@ -141,6 +189,9 @@ export default function HostLobby({ params }: Route.ComponentProps) {
         </p>
         <p className="mt-2 text-center text-xs font-semibold text-[#4f5fa2]">
           Playlists: {room.state.playlistIds.join(", ")}
+        </p>
+        <p className="mt-1 text-center text-xs font-semibold text-[#4f5fa2]">
+          Songs in game: {room.state.gameSongCount}
         </p>
 
         <div className="mt-4 flex justify-center">
@@ -237,6 +288,8 @@ export default function HostLobby({ params }: Route.ComponentProps) {
           <p className="mt-2 text-center text-xs font-semibold text-[#8d2e2a]">
             {playlistSelectionPending
               ? "Applying selected playlist pack to this room..."
+              : songCountSelectionPending
+                ? "Applying selected song-count limit to this room..."
               : "Waiting for preload completion. Use Force Start to override."}
           </p>
         ) : null}

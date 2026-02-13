@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import type { Route } from "./+types/host-setup";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
@@ -7,6 +7,12 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import {
+  clampGameSongCount,
+  defaultGameSongCount,
+  gameSongCountPresets,
+  parseGameSongCount,
+} from "~/lib/game-settings";
 import { generateRoomCode, normalizeRoomCode } from "~/lib/room-code";
 import {
   isTokenExpiring,
@@ -23,6 +29,7 @@ type PlaylistCatalogEntry = {
   id: string;
   name: string;
   version: number;
+  roundCount: number;
 };
 
 export default function HostSetup() {
@@ -34,6 +41,7 @@ export default function HostSetup() {
   const [refreshingToken, setRefreshingToken] = useState(false);
   const [playlistCatalog, setPlaylistCatalog] = useState<PlaylistCatalogEntry[]>([]);
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
+  const [requestedSongCount, setRequestedSongCount] = useState(defaultGameSongCount);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -71,9 +79,13 @@ export default function HostSetup() {
       .split(",")
       .map((playlistId) => playlistId.trim())
       .filter((playlistId) => playlistId.length > 0);
+    const oauthSongCount = parseGameSongCount(searchParams.get("songs"));
     setRoomCode((current) => current || oauthRoom || generateRoomCode());
     if (oauthPlaylists.length > 0) {
       setSelectedPlaylistIds((current) => (current.length > 0 ? current : oauthPlaylists));
+    }
+    if (oauthSongCount !== null) {
+      setRequestedSongCount(oauthSongCount);
     }
 
     if (oauthError) {
@@ -114,7 +126,7 @@ export default function HostSetup() {
 
         const payload = (await response.json()) as {
           kind?: string;
-          playlists?: Array<{ id?: string; name?: string; version?: number }>;
+          playlists?: Array<{ id?: string; name?: string; version?: number; roundCount?: number }>;
         };
         if (cancelled || payload.kind !== "playlist-catalog" || !Array.isArray(payload.playlists)) {
           return;
@@ -122,7 +134,7 @@ export default function HostSetup() {
 
         const entries = payload.playlists
           .filter(
-            (entry): entry is { id: string; name: string; version: number } =>
+            (entry): entry is { id: string; name: string; version: number; roundCount?: number } =>
               typeof entry?.id === "string" &&
               entry.id.trim().length > 0 &&
               typeof entry?.name === "string" &&
@@ -134,6 +146,10 @@ export default function HostSetup() {
             id: entry.id.trim(),
             name: entry.name.trim(),
             version: Math.floor(entry.version),
+            roundCount:
+              typeof entry.roundCount === "number" && Number.isFinite(entry.roundCount) && entry.roundCount > 0
+                ? Math.floor(entry.roundCount)
+                : 0,
           }));
 
         setPlaylistCatalog(entries);
@@ -154,6 +170,48 @@ export default function HostSetup() {
       cancelled = true;
     };
   }, []);
+
+  const playlistEntries = useMemo<PlaylistCatalogEntry[]>(() => {
+    const baseEntries =
+      playlistCatalog.length > 0
+        ? playlistCatalog
+        : [{ id: "core-pop", name: "Core Pop", version: 1, roundCount: 5 }];
+    const knownIds = new Set(baseEntries.map((entry) => entry.id));
+    const missingSelected = selectedPlaylistIds
+      .filter((playlistId) => !knownIds.has(playlistId))
+      .map((playlistId) => ({
+        id: playlistId,
+        name: playlistId,
+        version: 1,
+        roundCount: defaultGameSongCount,
+      }));
+
+    return [...baseEntries, ...missingSelected];
+  }, [playlistCatalog, selectedPlaylistIds]);
+
+  const selectedRoundCapacity = useMemo(() => {
+    if (selectedPlaylistIds.length === 0) {
+      return defaultGameSongCount;
+    }
+
+    const roundCountByPlaylistId = new Map(playlistEntries.map((entry) => [entry.id, entry.roundCount] as const));
+    const selectedTotal = selectedPlaylistIds.reduce((total, playlistId) => {
+      return total + (roundCountByPlaylistId.get(playlistId) ?? 0);
+    }, 0);
+
+    return selectedTotal > 0 ? selectedTotal : defaultGameSongCount;
+  }, [playlistEntries, selectedPlaylistIds]);
+
+  useEffect(() => {
+    setRequestedSongCount((current) =>
+      clampGameSongCount(current, selectedRoundCapacity, defaultGameSongCount),
+    );
+  }, [selectedRoundCapacity]);
+
+  const selectedGameSongCount = useMemo(
+    () => clampGameSongCount(requestedSongCount, selectedRoundCapacity, defaultGameSongCount),
+    [requestedSongCount, selectedRoundCapacity],
+  );
 
   const refreshToken = () => {
     setRefreshingToken(true);
@@ -201,10 +259,17 @@ export default function HostSetup() {
       }
     }
 
-    navigate(`/host/lobby/${normalized}?playlists=${encodeURIComponent(safePlaylistIds.join(","))}`);
+    const target = new URLSearchParams();
+    target.set("playlists", safePlaylistIds.join(","));
+    target.set("songs", String(selectedGameSongCount));
+    navigate(`/host/lobby/${normalized}?${target.toString()}`);
   };
 
-  const connectHref = `/auth/spotify/start?room=${encodeURIComponent(normalizeRoomCode(roomCode) || "")}&playlists=${encodeURIComponent(selectedPlaylistIds.join(","))}`;
+  const connectParams = new URLSearchParams();
+  connectParams.set("room", normalizeRoomCode(roomCode) || "");
+  connectParams.set("playlists", selectedPlaylistIds.join(","));
+  connectParams.set("songs", String(selectedGameSongCount));
+  const connectHref = `/auth/spotify/start?${connectParams.toString()}`;
 
   return (
     <main className="jam-page">
@@ -248,10 +313,7 @@ export default function HostSetup() {
               <div className="grid gap-2 text-sm font-bold text-[#32277e]">
                 <p>Playlist packs</p>
                 <div className="grid gap-2 rounded-xl border-2 border-[#29459c] bg-[#eef4ff] p-3">
-                  {(playlistCatalog.length > 0
-                    ? playlistCatalog
-                    : [{ id: "core-pop", name: "Core Pop", version: 1 }]
-                  ).map((entry) => (
+                  {playlistEntries.map((entry) => (
                     <label key={entry.id} className="flex items-center gap-2 text-sm font-semibold text-[#1f1f55]">
                       <input
                         type="checkbox"
@@ -266,10 +328,54 @@ export default function HostSetup() {
                         }}
                       />
                       <span>
-                        {entry.name} ({entry.id}.v{entry.version})
+                        {entry.name} ({entry.id}.v{entry.version}) | {entry.roundCount} songs
                       </span>
                     </label>
                   ))}
+                </div>
+                <p className="text-xs font-semibold text-[#4f5fa2]">
+                  Selected pack size: {selectedRoundCapacity} songs
+                </p>
+              </div>
+
+              <div className="grid gap-2 text-sm font-bold text-[#32277e]">
+                <p>Songs in this game</p>
+                <div className="grid gap-2 rounded-xl border-2 border-[#29459c] bg-[#eef4ff] p-3">
+                  <div className="flex flex-wrap gap-2">
+                    {gameSongCountPresets.map((preset) => (
+                      <Button
+                        key={preset}
+                        type="button"
+                        variant={requestedSongCount === preset ? "default" : "outline"}
+                        onClick={() => setRequestedSongCount(preset)}
+                        disabled={preset > selectedRoundCapacity}
+                      >
+                        {preset}
+                      </Button>
+                    ))}
+                  </div>
+                  <label className="grid gap-1 text-xs font-semibold text-[#1f1f55]">
+                    Custom
+                    <Input
+                      type="number"
+                      min={1}
+                      max={selectedRoundCapacity}
+                      step={1}
+                      value={requestedSongCount}
+                      onChange={(event) => {
+                        const parsed = parseGameSongCount(event.target.value);
+                        if (parsed === null) {
+                          return;
+                        }
+                        setRequestedSongCount(
+                          clampGameSongCount(parsed, selectedRoundCapacity, defaultGameSongCount),
+                        );
+                      }}
+                    />
+                  </label>
+                  <p className="text-xs font-semibold text-[#4f5fa2]">
+                    Using {selectedGameSongCount} songs (max {selectedRoundCapacity})
+                  </p>
                 </div>
               </div>
 

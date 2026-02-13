@@ -82,6 +82,9 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
         <p className="mt-2 text-center text-xs font-semibold text-[#4f5fa2]">
           Playlists: {room.state.playlistIds.join(", ")}
         </p>
+        <p className="mt-1 text-center text-xs font-semibold text-[#4f5fa2]">
+          Songs in game: {room.state.gameSongCount}
+        </p>
 
         <Card className="mt-5">
           <CardHeader>

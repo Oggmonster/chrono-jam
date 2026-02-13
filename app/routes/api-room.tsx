@@ -3,6 +3,7 @@ import {
   getRoomState,
   removeParticipant,
   replaceRoomState,
+  updateRoomGameSongCount,
   updateRoomPlaylistIds,
   upsertPreloadReadiness,
   upsertGuessSubmission,
@@ -34,6 +35,10 @@ type RoomCommand =
   | {
       type: "update_playlist_ids";
       playlistIds: string[];
+    }
+  | {
+      type: "update_game_song_count";
+      songCount: number;
     };
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -120,6 +125,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         return new Response("Invalid playlist ids payload", { status: 400 });
       }
       return Response.json(updateRoomPlaylistIds(roomId, command.playlistIds));
+    }
+    case "update_game_song_count": {
+      if (typeof command.songCount !== "number") {
+        return new Response("Invalid game song count payload", { status: 400 });
+      }
+      return Response.json(updateRoomGameSongCount(roomId, command.songCount));
     }
     default:
       return new Response("Unsupported command", { status: 400 });

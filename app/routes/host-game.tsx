@@ -290,7 +290,9 @@ export default function HostGame({ params }: Route.ComponentProps) {
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <Badge>{room.state.lifecycle.toUpperCase()}</Badge>
-          <Badge variant="warning">Round {room.state.roundIndex + 1}</Badge>
+          <Badge variant="warning">
+            Round {room.state.roundIndex + 1}/{room.state.rounds.length}
+          </Badge>
           <Badge variant={room.state.phase === "LISTEN" ? "success" : "default"}>
             {phaseLabel(room.state.phase)}
           </Badge>

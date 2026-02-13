@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { clampGameSongCount, defaultGameSongCount, parseGameSongCount } from "~/lib/game-settings";
 import { defaultPlaylistIds } from "~/lib/gamepack";
 import { mockRounds } from "~/lib/mock-room";
 import { buildTimelineEntries, clampTimelineInsertIndex, isTimelineInsertCorrect } from "~/lib/timeline";
@@ -83,6 +84,7 @@ export type RoomState = {
   timelineSubmissions: Record<string, TimelineSubmission>;
   preloadReadiness: Record<string, PreloadReadiness>;
   playlistIds: string[];
+  gameSongCount: number;
   rounds: RoomRound[];
   timelineRoundIds: string[];
   scores: Record<string, number>;
@@ -113,6 +115,10 @@ type RoomCommand =
   | {
       type: "update_playlist_ids";
       playlistIds: string[];
+    }
+  | {
+      type: "update_game_song_count";
+      songCount: number;
     };
 
 type RoomHookResult = {
@@ -140,6 +146,7 @@ type RoomHookResult = {
       >,
     ) => void;
     updatePlaylistIds: (playlistIds: string[]) => void;
+    updateGameSongCount: (songCount: number) => void;
   };
 };
 
@@ -265,6 +272,11 @@ function normalizeRoomState(state: RoomState): RoomState {
   const roundIdSet = new Set(safeRounds.map((round) => round.id));
   const parsedRoundIndex = Number.isFinite(Number(state.roundIndex)) ? Math.floor(Number(state.roundIndex)) : 0;
   const maxRoundIndex = Math.max(0, safeRounds.length - 1);
+  const gameSongCount = clampGameSongCount(
+    parseGameSongCount((state as { gameSongCount?: unknown }).gameSongCount) ?? safeRounds.length,
+    safeRounds.length,
+    defaultGameSongCount,
+  );
 
   return {
     ...state,
@@ -272,6 +284,7 @@ function normalizeRoomState(state: RoomState): RoomState {
     roundIndex: Math.max(0, Math.min(maxRoundIndex, parsedRoundIndex)),
     allowedPlayerIds,
     playlistIds: playlistIds.length > 0 ? playlistIds : [...defaultPlaylistIds],
+    gameSongCount,
     rounds: safeRounds,
     guessSubmissions:
       state.guessSubmissions && typeof state.guessSubmissions === "object" ? state.guessSubmissions : {},
@@ -305,6 +318,7 @@ function shouldApplyRemoteState(current: RoomState, incoming: RoomState) {
     incoming.participants.length !== current.participants.length ||
     incoming.allowedPlayerIds.join(",") !== current.allowedPlayerIds.join(",") ||
     incoming.playlistIds.join(",") !== current.playlistIds.join(",") ||
+    incoming.gameSongCount !== current.gameSongCount ||
     incoming.rounds.length !== current.rounds.length ||
     incoming.rounds.map((round) => round.id).join(",") !== current.rounds.map((round) => round.id).join(",") ||
     Object.keys(incoming.guessSubmissions).length !== Object.keys(current.guessSubmissions).length ||
@@ -321,6 +335,7 @@ function colorForParticipantIndex(index: number) {
 }
 
 export function createLobbyState(roomId: string, at = nowMs()): RoomState {
+  const rounds = fallbackRounds();
   return {
     roomId,
     lifecycle: "lobby",
@@ -335,7 +350,8 @@ export function createLobbyState(roomId: string, at = nowMs()): RoomState {
     timelineSubmissions: {},
     preloadReadiness: {},
     playlistIds: [...defaultPlaylistIds],
-    rounds: fallbackRounds(),
+    gameSongCount: clampGameSongCount(defaultGameSongCount, rounds.length, defaultGameSongCount),
+    rounds,
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},
@@ -773,6 +789,24 @@ function updatePlaylistIdsInState(roomState: RoomState, playlistIds: string[]) {
   };
 }
 
+function updateGameSongCountInState(roomState: RoomState, songCount: number) {
+  const parsed = parseGameSongCount(songCount);
+  if (parsed === null) {
+    return roomState;
+  }
+
+  const nextGameSongCount = clampGameSongCount(parsed, roomState.rounds.length, roomState.gameSongCount);
+  if (nextGameSongCount === roomState.gameSongCount) {
+    return roomState;
+  }
+
+  return {
+    ...roomState,
+    gameSongCount: nextGameSongCount,
+    updatedAt: roomState.updatedAt,
+  };
+}
+
 function getActiveRound(state: RoomState) {
   const rounds = state.rounds.length > 0 ? state.rounds : fallbackRounds();
   return rounds[Math.min(state.roundIndex, rounds.length - 1)]!;
@@ -1077,6 +1111,23 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
           }
           return nextState;
         });
+      },
+      updateGameSongCount: (songCount: number) => {
+        if (role !== "host") {
+          return;
+        }
+
+        setState((prevState) => updateGameSongCountInState(prevState, songCount));
+        void postRoomCommand(roomId, {
+          type: "update_game_song_count",
+          songCount,
+        })
+          .then((remote) => {
+            syncRemoteIfNewer(remote);
+          })
+          .catch(() => {
+            // Best-effort in local dev.
+          });
       },
     }),
     [role, roomId, sendStateToServer, syncRemoteIfNewer],

@@ -22,6 +22,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const requestUrl = new URL(request.url);
   const room = requestUrl.searchParams.get("room") ?? "";
   const playlists = requestUrl.searchParams.get("playlists") ?? "";
+  const songs = requestUrl.searchParams.get("songs") ?? "";
   const state = randomState();
   const redirectUri = getSpotifyRedirectUri(request);
 
@@ -36,6 +37,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   if (playlists) {
     authorizeUrl.searchParams.set("playlists", playlists);
+  }
+  if (songs) {
+    authorizeUrl.searchParams.set("songs", songs);
   }
 
   return redirect(authorizeUrl.toString(), {
