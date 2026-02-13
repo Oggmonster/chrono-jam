@@ -7,9 +7,11 @@ import {
   getSpotifyClientId,
   getSpotifyClientSecret,
   getSpotifyRedirectUri,
+  getSpotifySession,
   parseCookieValue,
   spotifyStateCookieName,
 } from "~/lib/spotify-oauth.server";
+import { storeCachedSpotifyAccessToken } from "~/lib/spotify-access-token-cache.server";
 
 type TokenResponse = {
   access_token: string;
@@ -47,6 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   let clientId: string;
   let clientSecret: string;
   let redirectUri: string;
+  const { sessionId, setCookie: sessionCookie } = getSpotifySession(request);
 
   try {
     clientId = getSpotifyClientId();
@@ -78,6 +81,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const tokenData = (await response.json()) as TokenResponse;
+  storeCachedSpotifyAccessToken(sessionId, {
+    accessToken: tokenData.access_token,
+    expiresIn: tokenData.expires_in,
+    scope: tokenData.scope ?? "",
+    tokenType: tokenData.token_type ?? "Bearer",
+  });
+
   const target = new URL("/host/setup", request.url);
   target.searchParams.set("spotify_access_token", tokenData.access_token);
   target.searchParams.set("spotify_expires_in", String(tokenData.expires_in));
@@ -94,6 +104,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie(spotifyStateCookieName, request));
+  if (sessionCookie) {
+    headers.append("Set-Cookie", sessionCookie);
+  }
   if (tokenData.refresh_token) {
     headers.append("Set-Cookie", buildRefreshCookie(tokenData.refresh_token, request));
   }

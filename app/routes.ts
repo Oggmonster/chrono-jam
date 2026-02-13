@@ -5,6 +5,7 @@ export default [
   route("admin", "routes/admin.tsx"),
   route("auth/spotify/start", "routes/auth-spotify-start.tsx"),
   route("auth/spotify/callback", "routes/auth-spotify-callback.tsx"),
+  route("auth/spotify/token", "routes/auth-spotify-token.tsx"),
   route("auth/spotify/refresh", "routes/auth-spotify-refresh.tsx"),
   route("api/room/:roomId", "routes/api-room.tsx"),
   route("api/room/:roomId/events", "routes/api-room-events.tsx"),

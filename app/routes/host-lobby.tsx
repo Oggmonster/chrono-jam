@@ -9,7 +9,11 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { parseGameSongCount } from "~/lib/game-settings";
 import { useRoomState } from "~/lib/game-engine";
-import { isTokenExpiring, readStoredSpotifyToken, refreshSpotifyAccessToken } from "~/lib/spotify-token";
+import {
+  readStoredSpotifyToken,
+  refreshSpotifyAccessToken,
+  resolveSpotifyAccessToken,
+} from "~/lib/spotify-token";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Lobby" }];
@@ -74,23 +78,20 @@ export default function HostLobby({ params }: Route.ComponentProps) {
     const stored = readStoredSpotifyToken();
     setSpotifyTokenPresent(Boolean(stored.accessToken));
 
-    if (!stored.accessToken) {
-      return;
-    }
-
-    if (!isTokenExpiring(stored.expiresAt)) {
-      return;
-    }
-
     try {
-      setRefreshingToken(true);
-      await refreshSpotifyAccessToken();
+      const resolved = await resolveSpotifyAccessToken();
       setSpotifyTokenPresent(true);
-      setSpotifyTokenStatus("Spotify token refreshed.");
+      if (resolved.source === "refresh") {
+        setSpotifyTokenStatus("Spotify token refreshed.");
+      } else if (!stored.accessToken) {
+        setSpotifyTokenStatus("Spotify token ready.");
+      }
     } catch {
-      setSpotifyTokenStatus("Spotify token refresh failed. Reconnect Spotify.");
-    } finally {
-      setRefreshingToken(false);
+      const fallback = readStoredSpotifyToken();
+      setSpotifyTokenPresent(Boolean(fallback.accessToken));
+      if (!fallback.accessToken) {
+        setSpotifyTokenStatus("Spotify token missing. Reconnect Spotify.");
+      }
     }
   };
 

@@ -15,8 +15,8 @@ import {
 } from "~/lib/game-settings";
 import { generateRoomCode, normalizeRoomCode } from "~/lib/room-code";
 import {
-  isTokenExpiring,
   readStoredSpotifyToken,
+  resolveSpotifyAccessToken,
   refreshSpotifyAccessToken,
   storeSpotifyToken,
 } from "~/lib/spotify-token";
@@ -53,17 +53,23 @@ export default function HostSetup() {
       setToken(stored.accessToken);
     }
 
-    if (stored.accessToken && isTokenExpiring(stored.expiresAt)) {
-      void refreshSpotifyAccessToken()
-        .then(({ accessToken, expiresIn }) => {
-          storeSpotifyToken(accessToken, expiresIn);
-          setToken(accessToken);
+    void resolveSpotifyAccessToken()
+      .then(({ accessToken, source }) => {
+        setToken(accessToken);
+        if (!stored.accessToken) {
+          setStatusText("Spotify token loaded.");
+          return;
+        }
+
+        if (source === "refresh") {
           setStatusText("Spotify token refreshed.");
-        })
-        .catch(() => {
-          setStatusText("Spotify token expired. Please reconnect Spotify.");
-        });
-    }
+        }
+      })
+      .catch(() => {
+        if (!stored.accessToken) {
+          setStatusText("Spotify token missing. Please connect Spotify.");
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -244,17 +250,15 @@ export default function HostSetup() {
           setStatusText("Manual token saved. Connect Spotify if playback fails.");
         }
       } else {
-        const stored = readStoredSpotifyToken();
-        if (!stored.accessToken) {
-          try {
-            const refreshed = await refreshSpotifyAccessToken();
-            storeSpotifyToken(refreshed.accessToken, refreshed.expiresIn);
-            setToken(refreshed.accessToken);
+        try {
+          const resolved = await resolveSpotifyAccessToken();
+          setToken(resolved.accessToken);
+          if (resolved.source === "refresh") {
             setStatusText("Spotify token refreshed.");
-          } catch {
-            setStatusText("No valid Spotify token. Connect Spotify before continuing.");
-            return;
           }
+        } catch {
+          setStatusText("No valid Spotify token. Connect Spotify before continuing.");
+          return;
         }
       }
     }

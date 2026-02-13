@@ -12,9 +12,8 @@ import { Progress } from "~/components/ui/progress";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import { useSpotifyHostPlayer } from "~/lib/spotify-host";
 import {
-  clearStoredSpotifyToken,
-  isTokenExpiring,
   readStoredSpotifyToken,
+  resolveSpotifyAccessToken,
   refreshSpotifyAccessToken,
   storeSpotifyToken,
 } from "~/lib/spotify-token";
@@ -36,17 +35,6 @@ export default function HostGame({ params }: Route.ComponentProps) {
   const autoInitTokenRef = useRef<string>("");
   const interactionUnlockedRef = useRef(false);
 
-  const validateAccessToken = async (candidateToken: string) => {
-    const response = await fetch("https://api.spotify.com/v1/me", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${candidateToken}`,
-      },
-    });
-
-    return response.ok;
-  };
-
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -55,50 +43,22 @@ export default function HostGame({ params }: Route.ComponentProps) {
     const stored = readStoredSpotifyToken();
     if (stored.accessToken) {
       setToken(stored.accessToken);
+      setTokenStatus("Using stored token.");
     }
 
     let cancelled = false;
-
-    setRefreshingToken(true);
-    void refreshSpotifyAccessToken()
-      .then(({ accessToken, expiresIn }) => {
+    void resolveSpotifyAccessToken()
+      .then(({ accessToken, source }) => {
         if (cancelled) {
           return;
         }
 
-        storeSpotifyToken(accessToken, expiresIn);
         setToken(accessToken);
-        setTokenStatus("Token refreshed.");
+        setTokenStatus(source === "refresh" ? "Token refreshed." : "Token synced from setup.");
       })
       .catch(() => {
-        if (cancelled) {
-          return;
-        }
-
         if (!stored.accessToken) {
-          setTokenStatus("Missing token. Reconnect Spotify.");
-          return;
-        }
-
-        void validateAccessToken(stored.accessToken).then((valid) => {
-          if (cancelled) {
-            return;
-          }
-
-          if (valid) {
-            setToken(stored.accessToken);
-            setTokenStatus("Using stored token (refresh unavailable).");
-            return;
-          }
-
-          clearStoredSpotifyToken();
-          setToken("");
-          setTokenStatus("Stored token is invalid. Reconnect Spotify.");
-        });
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setRefreshingToken(false);
+          setTokenStatus("Missing token. Reconnect Spotify or paste a valid access token.");
         }
       });
 
@@ -108,32 +68,20 @@ export default function HostGame({ params }: Route.ComponentProps) {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      const stored = readStoredSpotifyToken();
-      if (!isTokenExpiring(stored.expiresAt)) {
-        return;
-      }
-
-      setRefreshingToken(true);
-      void refreshSpotifyAccessToken()
-        .then(({ accessToken, expiresIn }) => {
-          storeSpotifyToken(accessToken, expiresIn);
-          setToken(accessToken);
-          setTokenStatus("Token refreshed.");
+    const syncToken = () => {
+      void resolveSpotifyAccessToken()
+        .then(({ accessToken, source }) => {
+          setToken((current) => (current === accessToken ? current : accessToken));
+          if (source === "refresh") {
+            setTokenStatus("Token auto-refreshed.");
+          }
         })
         .catch(() => {
-          if (!stored.accessToken) {
-            setTokenStatus("Missing token. Reconnect Spotify.");
-            return;
-          }
-
-          setTokenStatus("Token refresh failed. Reconnect Spotify.");
-        })
-        .finally(() => {
-          setRefreshingToken(false);
+          // Ignore periodic sync failures and keep current token.
         });
-    }, 20_000);
+    };
 
+    const timer = window.setInterval(syncToken, 20_000);
     return () => {
       window.clearInterval(timer);
     };
@@ -196,7 +144,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    const autoplayKey = `${room.round.id}:${room.state.phaseStartedAt}`;
+    const autoplayKey = `${room.state.roundIndex}:${room.round.id}:${room.state.phaseStartedAt}`;
     let disposed = false;
 
     const attemptPlay = async () => {
@@ -208,7 +156,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
         return;
       }
 
-      if (!spotify.connected || !spotify.ready) {
+      if (!spotify.ready || !spotify.deviceId) {
         await spotify.initialize();
         return;
       }
@@ -235,11 +183,12 @@ export default function HostGame({ params }: Route.ComponentProps) {
     room.state.lifecycle,
     room.state.phase,
     room.state.phaseStartedAt,
+    spotify.deviceId,
     spotify,
   ]);
 
   useEffect(() => {
-    if (room.state.lifecycle === "running" && room.state.phase !== "INTERMISSION") {
+    if (room.state.lifecycle === "running" && room.state.phase === "LISTEN") {
       return;
     }
 

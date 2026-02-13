@@ -4,6 +4,7 @@ export const spotifyTokenExpiryKey = "chronojam:spotify-access-token-expiry";
 type RefreshPayload = {
   accessToken: string;
   expiresIn: number;
+  source?: string;
 };
 
 export function readStoredSpotifyToken() {
@@ -48,6 +49,25 @@ export async function refreshSpotifyAccessToken(): Promise<RefreshPayload> {
   const payload = (await response.json()) as RefreshPayload;
   if (!payload.accessToken || !payload.expiresIn) {
     throw new Error("Invalid refresh response.");
+  }
+
+  storeSpotifyToken(payload.accessToken, payload.expiresIn);
+  return payload;
+}
+
+export async function resolveSpotifyAccessToken(): Promise<RefreshPayload> {
+  const response = await fetch("/auth/spotify/token", {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Token resolve failed (${response.status})`);
+  }
+
+  const payload = (await response.json()) as RefreshPayload;
+  if (!payload.accessToken || !payload.expiresIn) {
+    throw new Error("Invalid token response.");
   }
 
   storeSpotifyToken(payload.accessToken, payload.expiresIn);

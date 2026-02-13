@@ -10,6 +10,7 @@ const spotifyScopes = [
 
 export const spotifyStateCookieName = "chronojam_spotify_state";
 export const spotifyRefreshCookieName = "chronojam_spotify_refresh";
+export const spotifySessionCookieName = "chronojam_spotify_session";
 
 function getRequiredEnv(name: "SPOTIFY_CLIENT_ID" | "SPOTIFY_CLIENT_SECRET") {
   const value = process.env[name];
@@ -115,4 +116,17 @@ export function buildRefreshCookie(value: string, request: Request, maxAgeSecond
 
 export function clearRefreshCookie(request: Request) {
   return clearStateCookie(spotifyRefreshCookieName, request);
+}
+
+export function getSpotifySession(request: Request) {
+  const existing = parseCookieValue(request.headers.get("Cookie"), spotifySessionCookieName);
+  if (existing) {
+    return { sessionId: existing, setCookie: null as string | null };
+  }
+
+  const sessionId = randomState(24);
+  return {
+    sessionId,
+    setCookie: buildStateCookie(spotifySessionCookieName, sessionId, request, 60 * 60 * 24 * 30),
+  };
 }

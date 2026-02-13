@@ -155,9 +155,9 @@ const participantColors = ["#4ec7e0", "#f28d35", "#e45395", "#7bcf4b", "#7d6cfc"
 const participantStaleMs = 20_000;
 
 const phaseDurationsMs: Record<GamePhase, number> = {
-  LISTEN: 45_000,
+  LISTEN: 40_000,
   REVEAL: 8_000,
-  INTERMISSION: 5_000,
+  INTERMISSION: 8_000,
 };
 
 function fallbackRounds(): RoomRound[] {

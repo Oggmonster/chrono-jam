@@ -1,12 +1,13 @@
-import type { Route } from "./+types/auth-spotify-refresh";
+import type { Route } from "./+types/auth-spotify-token";
 
 import {
-  getSpotifySession,
-} from "~/lib/spotify-oauth.server";
-import {
   clearCachedSpotifyAccessToken,
+  isSpotifyAccessTokenExpiring,
+  readCachedSpotifyAccessToken,
+  secondsUntilTokenExpiry,
   storeCachedSpotifyAccessToken,
 } from "~/lib/spotify-access-token-cache.server";
+import { getSpotifySession } from "~/lib/spotify-oauth.server";
 import { refreshSpotifyAccessTokenFromCookie } from "~/lib/spotify-refresh.server";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -22,16 +23,44 @@ export async function loader({ request }: Route.LoaderArgs) {
     headers.append("Set-Cookie", sessionCookie);
   }
 
+  const cached = readCachedSpotifyAccessToken(sessionId);
+  if (cached && !isSpotifyAccessTokenExpiring(cached.expiresAt, 60_000)) {
+    return jsonResponse(
+      {
+        accessToken: cached.accessToken,
+        expiresIn: secondsUntilTokenExpiry(cached.expiresAt),
+        scope: cached.scope,
+        tokenType: cached.tokenType,
+        source: "cache",
+      },
+      { headers },
+    );
+  }
+
   const refreshed = await refreshSpotifyAccessTokenFromCookie(request);
   if (!refreshed.ok) {
-    clearCachedSpotifyAccessToken(sessionId);
     if (refreshed.setCookie) {
       headers.append("Set-Cookie", refreshed.setCookie);
     }
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return jsonResponse(
+        {
+          accessToken: cached.accessToken,
+          expiresIn: secondsUntilTokenExpiry(cached.expiresAt),
+          scope: cached.scope,
+          tokenType: cached.tokenType,
+          source: "cache-stale",
+        },
+        { headers },
+      );
+    }
+
+    clearCachedSpotifyAccessToken(sessionId);
     return jsonResponse({ error: refreshed.error }, { status: refreshed.status, headers });
   }
 
-  storeCachedSpotifyAccessToken(sessionId, {
+  const next = storeCachedSpotifyAccessToken(sessionId, {
     accessToken: refreshed.accessToken,
     expiresIn: refreshed.expiresIn,
     scope: refreshed.scope,
@@ -44,16 +73,17 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return jsonResponse(
     {
-      accessToken: refreshed.accessToken,
-      expiresIn: refreshed.expiresIn,
-      scope: refreshed.scope,
-      tokenType: refreshed.tokenType,
+      accessToken: next.accessToken,
+      expiresIn: secondsUntilTokenExpiry(next.expiresAt),
+      scope: next.scope,
+      tokenType: next.tokenType,
       source: "refresh",
     },
     { headers },
   );
 }
 
-export default function AuthSpotifyRefresh() {
+export default function AuthSpotifyToken() {
   return null;
 }
+

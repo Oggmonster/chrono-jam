@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { refreshSpotifyAccessToken } from "~/lib/spotify-token";
 
 declare global {
   interface Window {
@@ -74,12 +73,13 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
   const playerRef = useRef<SpotifyPlayer | null>(null);
   const tokenRef = useRef(accessToken);
   const activatingDeviceRef = useRef<string | null>(null);
+  const readyRef = useRef(false);
+  const deviceIdRef = useRef<string | null>(null);
 
   const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const refreshingTokenRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
     tokenRef.current = accessToken;
@@ -99,7 +99,12 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
 
     setError(null);
 
-    await loadSpotifySdk();
+    try {
+      await loadSpotifySdk();
+    } catch {
+      setError("Could not load Spotify Web Playback SDK.");
+      return false;
+    }
 
     if (!window.Spotify) {
       setError("Spotify SDK did not initialize.");
@@ -114,12 +119,16 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
       });
 
       player.addListener("ready", ({ device_id }) => {
+        readyRef.current = true;
+        deviceIdRef.current = device_id;
         setDeviceId(device_id);
         setReady(true);
         setConnected(true);
       });
 
       player.addListener("not_ready", () => {
+        readyRef.current = false;
+        deviceIdRef.current = null;
         setConnected(false);
         setReady(false);
         setDeviceId(null);
@@ -153,42 +162,22 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
       }
     }
 
-    const ok = await playerRef.current.connect();
-    setConnected(ok);
+    let ok = await playerRef.current.connect();
+    if (!ok && readyRef.current && Boolean(deviceIdRef.current)) {
+      ok = true;
+    }
+    setConnected((current) => current || ok);
 
     if (!ok) {
-      setError("Could not connect Spotify player.");
+      setError("Could not connect Spotify player. Use Refresh Token in host controls, then retry Init SDK.");
       return false;
     }
 
     return true;
   }, []);
 
-  const refreshToken = useCallback(async () => {
-    if (refreshingTokenRef.current) {
-      return refreshingTokenRef.current;
-    }
-
-    const run = (async () => {
-      try {
-        const refreshed = await refreshSpotifyAccessToken();
-        tokenRef.current = refreshed.accessToken.trim();
-        setError(null);
-        return Boolean(tokenRef.current);
-      } catch {
-        setError("Spotify token refresh failed. Reconnect Spotify in host setup.");
-        return false;
-      } finally {
-        refreshingTokenRef.current = null;
-      }
-    })();
-
-    refreshingTokenRef.current = run;
-    return run;
-  }, []);
-
   const spotifyPut = useCallback(
-    async (path: string, body?: unknown, retry = true) => {
+    async (path: string, body?: unknown) => {
       if (!tokenRef.current) {
         return { ok: false, status: 401, response: null as Response | null };
       }
@@ -202,27 +191,9 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
 
-      if (response.status === 401 && retry) {
-        const refreshed = await refreshToken();
-        if (!refreshed) {
-          return { ok: false, status: 401, response };
-        }
-
-        const retryResponse = await fetch(`https://api.spotify.com/v1${path}`, {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${tokenRef.current}`,
-            ...(body ? { "Content-Type": "application/json" } : {}),
-          },
-          ...(body ? { body: JSON.stringify(body) } : {}),
-        });
-
-        return { ok: retryResponse.ok, status: retryResponse.status, response: retryResponse };
-      }
-
       return { ok: response.ok, status: response.status, response };
     },
-    [refreshToken],
+    [],
   );
 
   const activateDevice = useCallback(async (targetDeviceId: string) => {
@@ -236,8 +207,8 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
 
     activatingDeviceRef.current = targetDeviceId;
     const { ok, status } = await spotifyPut("/me/player", {
-        device_ids: [targetDeviceId],
-        play: false,
+      device_ids: [targetDeviceId],
+      play: false,
     });
 
     if (!ok) {
