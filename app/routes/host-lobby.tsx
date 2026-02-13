@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import type { Route } from "./+types/host-lobby";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import { PlayerChip } from "~/components/player-chip";
 import { Ribbon } from "~/components/ribbon";
@@ -15,7 +16,16 @@ export function meta({}: Route.MetaArgs) {
 
 export default function HostLobby({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
+  const navigate = useNavigate();
   const room = useRoomState(roomId, "host");
+
+  useEffect(() => {
+    if (room.state.lifecycle !== "running") {
+      return;
+    }
+
+    navigate(`/host/game/${roomId}`, { replace: true });
+  }, [navigate, room.state.lifecycle, roomId]);
 
   return (
     <main className="jam-page">
@@ -68,13 +78,16 @@ export default function HostLobby({ params }: Route.ComponentProps) {
           <Button variant="success" size="lg" onClick={room.controls.startGame}>
             Start Game
           </Button>
-          <Button asChild variant="secondary" size="lg">
-            <Link to={`/host/game/${roomId}`}>Open Host Game</Link>
-          </Button>
           <Button variant="outline" onClick={room.controls.resetLobby}>
             Reset Room
           </Button>
         </div>
+
+        {room.state.lifecycle === "running" ? (
+          <p className="mt-3 text-center text-sm font-semibold text-[#2e2e79]">
+            Game is live. This screen auto-redirects to host game.
+          </p>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap justify-center gap-3">
           <Button asChild variant="outline">

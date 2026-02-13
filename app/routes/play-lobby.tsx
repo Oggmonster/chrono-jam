@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { Route } from "./+types/play-lobby";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import { PlayerChip } from "~/components/player-chip";
 import { Ribbon } from "~/components/ribbon";
@@ -17,10 +17,19 @@ export function meta({}: Route.MetaArgs) {
 
 export default function PlayLobby({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
+  const navigate = useNavigate();
   const room = useRoomState(roomId, "player");
   const running = room.state.lifecycle === "running";
   const playerSession = useMemo(() => getPlayerSession(roomId), [roomId]);
   usePlayerPresence(playerSession, room.controls);
+
+  useEffect(() => {
+    if (!running || !playerSession) {
+      return;
+    }
+
+    navigate(`/play/game/${roomId}`, { replace: true });
+  }, [navigate, playerSession, roomId, running]);
 
   return (
     <main className="jam-page">
@@ -55,16 +64,20 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
         </Card>
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Button asChild size="lg" disabled={!running || !playerSession}>
-            <Link to={`/play/game/${roomId}`}>Enter Round Screen</Link>
-          </Button>
           <Button asChild variant="secondary">
             <Link to="/play/join">Change Room</Link>
           </Button>
         </div>
+        {running && playerSession ? (
+          <p className="mt-3 text-center text-sm font-semibold text-[#2e2e79]">
+            Game is live. You are auto-redirected to your round screen.
+          </p>
+        ) : null}
         {!playerSession ? (
           <p className="mt-3 text-center text-sm font-semibold text-[#8d2e2a]">
-            Join with a player name first to participate.
+            {running
+              ? "This game is already running on this device session. Rejoin using the same player profile."
+              : "Join with a player name first to participate."}
           </p>
         ) : null}
       </section>

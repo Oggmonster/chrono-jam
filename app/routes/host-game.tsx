@@ -135,6 +135,12 @@ export default function HostGame({ params }: Route.ComponentProps) {
   };
 
   const remainingSeconds = Math.ceil(room.remainingMs / 1000);
+  const leaderboard = [...room.state.participants]
+    .map((participant) => ({
+      ...participant,
+      points: room.state.scores[participant.id] ?? 0,
+    }))
+    .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
 
   return (
     <main className="jam-page">
@@ -242,6 +248,28 @@ export default function HostGame({ params }: Route.ComponentProps) {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="mt-5">
+          <CardHeader>
+            <CardTitle>Live Leaderboard</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {leaderboard.map((entry, index) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between rounded-xl border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2"
+              >
+                <span className="font-extrabold text-[#223f94]">
+                  {index + 1}. {entry.name}
+                </span>
+                <Badge variant={index === 0 ? "success" : "default"}>{entry.points}</Badge>
+              </div>
+            ))}
+            {leaderboard.length === 0 ? (
+              <p className="text-center text-sm font-semibold text-[#51449e]">No players in room.</p>
+            ) : null}
+          </CardContent>
+        </Card>
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Button asChild variant="outline">

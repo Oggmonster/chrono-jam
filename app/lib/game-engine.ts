@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { mockRounds } from "~/lib/mock-room";
 
-export type GamePhase = "LISTEN" | "GUESS" | "TIMELINE" | "REVEAL" | "INTERMISSION";
+export type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
 export type RoomLifecycle = "lobby" | "running" | "finished";
 export type RoomParticipant = {
   id: string;
@@ -10,6 +10,42 @@ export type RoomParticipant = {
   color: string;
   joinedAt: number;
   lastSeenAt: number;
+};
+
+export type GuessSubmission = {
+  playerId: string;
+  roundId: string;
+  trackId: string;
+  artistId: string;
+  submittedAt: number;
+};
+
+export type TimelineSubmission = {
+  playerId: string;
+  roundId: string;
+  insertIndex: number;
+  submittedAt: number;
+};
+
+export type RoundPlayerBreakdown = {
+  playerId: string;
+  guessCorrect: {
+    track: boolean;
+    artist: boolean;
+  };
+  timelineCorrect: boolean;
+  points: {
+    track: number;
+    artist: number;
+    timeline: number;
+    total: number;
+  };
+};
+
+export type RoundBreakdown = {
+  roundId: string;
+  resolvedAt: number;
+  players: Record<string, RoundPlayerBreakdown>;
 };
 
 export type RoomState = {
@@ -21,6 +57,12 @@ export type RoomState = {
   phaseEndsAt: number;
   updatedAt: number;
   participants: RoomParticipant[];
+  allowedPlayerIds: string[];
+  guessSubmissions: Record<string, GuessSubmission>;
+  timelineSubmissions: Record<string, TimelineSubmission>;
+  timelineRoundIds: string[];
+  scores: Record<string, number>;
+  roundBreakdowns: Record<string, RoundBreakdown>;
 };
 
 type RoomRole = "host" | "player";
@@ -28,7 +70,15 @@ type RoomRole = "host" | "player";
 type RoomCommand =
   | { type: "replace_state"; state: RoomState }
   | { type: "upsert_participant"; participant: Pick<RoomParticipant, "id" | "name"> }
-  | { type: "remove_participant"; participantId: string };
+  | { type: "remove_participant"; participantId: string }
+  | {
+      type: "submit_guess";
+      submission: Pick<GuessSubmission, "playerId" | "roundId" | "trackId" | "artistId">;
+    }
+  | {
+      type: "submit_timeline";
+      submission: Pick<TimelineSubmission, "playerId" | "roundId" | "insertIndex">;
+    };
 
 type RoomHookResult = {
   state: RoomState;
@@ -42,19 +92,29 @@ type RoomHookResult = {
     syncState: () => void;
     upsertParticipant: (participant: Pick<RoomParticipant, "id" | "name">) => void;
     removeParticipant: (participantId: string) => void;
+    submitGuess: (
+      submission: Pick<GuessSubmission, "playerId" | "roundId" | "trackId" | "artistId">,
+    ) => void;
+    submitTimeline: (
+      submission: Pick<TimelineSubmission, "playerId" | "roundId" | "insertIndex">,
+    ) => void;
   };
 };
 
-const phaseOrder: GamePhase[] = ["LISTEN", "GUESS", "TIMELINE", "REVEAL", "INTERMISSION"];
+const phaseOrder: GamePhase[] = ["LISTEN", "REVEAL", "INTERMISSION"];
 const participantColors = ["#4ec7e0", "#f28d35", "#e45395", "#7bcf4b", "#7d6cfc", "#ff7f5c"];
 const participantStaleMs = 20_000;
 
 const phaseDurationsMs: Record<GamePhase, number> = {
-  LISTEN: 15_000,
-  GUESS: 20_000,
-  TIMELINE: 14_000,
+  LISTEN: 28_000,
   REVEAL: 8_000,
   INTERMISSION: 5_000,
+};
+
+const scoringMaxPoints = {
+  track: 1_000,
+  artist: 600,
+  timeline: 800,
 };
 
 function nowMs() {
@@ -82,7 +142,7 @@ async function fetchRoomStateFromServer(roomId: string) {
     throw new Error(`Room fetch failed (${response.status})`);
   }
 
-  return (await response.json()) as RoomState;
+  return normalizeRoomState((await response.json()) as RoomState);
 }
 
 async function postRoomCommand(roomId: string, command: RoomCommand) {
@@ -100,7 +160,35 @@ async function postRoomCommand(roomId: string, command: RoomCommand) {
     throw new Error(`Room command failed (${response.status})`);
   }
 
-  return (await response.json()) as RoomState;
+  return normalizeRoomState((await response.json()) as RoomState);
+}
+
+function normalizeRoomState(state: RoomState): RoomState {
+  const phase: GamePhase =
+    state.phase === "REVEAL" || state.phase === "INTERMISSION" ? state.phase : "LISTEN";
+  const allowedPlayerIds = Array.isArray(state.allowedPlayerIds)
+    ? [
+        ...new Set(
+          state.allowedPlayerIds.filter(
+            (id): id is string => typeof id === "string" && id.trim().length > 0,
+          ),
+        ),
+      ]
+    : [...new Set(state.participants.map((participant) => participant.id))];
+
+  return {
+    ...state,
+    phase,
+    allowedPlayerIds,
+    guessSubmissions:
+      state.guessSubmissions && typeof state.guessSubmissions === "object" ? state.guessSubmissions : {},
+    timelineSubmissions:
+      state.timelineSubmissions && typeof state.timelineSubmissions === "object" ? state.timelineSubmissions : {},
+    timelineRoundIds: Array.isArray(state.timelineRoundIds) ? state.timelineRoundIds : [],
+    scores: state.scores && typeof state.scores === "object" ? state.scores : {},
+    roundBreakdowns:
+      state.roundBreakdowns && typeof state.roundBreakdowns === "object" ? state.roundBreakdowns : {},
+  };
 }
 
 function shouldApplyRemoteState(current: RoomState, incoming: RoomState) {
@@ -117,7 +205,13 @@ function shouldApplyRemoteState(current: RoomState, incoming: RoomState) {
     incoming.phase !== current.phase ||
     incoming.roundIndex !== current.roundIndex ||
     incoming.phaseEndsAt !== current.phaseEndsAt ||
-    incoming.participants.length !== current.participants.length
+    incoming.participants.length !== current.participants.length ||
+    incoming.allowedPlayerIds.join(",") !== current.allowedPlayerIds.join(",") ||
+    Object.keys(incoming.guessSubmissions).length !== Object.keys(current.guessSubmissions).length ||
+    Object.keys(incoming.timelineSubmissions).length !== Object.keys(current.timelineSubmissions).length ||
+    incoming.timelineRoundIds.join(",") !== current.timelineRoundIds.join(",") ||
+    Object.keys(incoming.scores).length !== Object.keys(current.scores).length ||
+    Object.keys(incoming.roundBreakdowns).length !== Object.keys(current.roundBreakdowns).length
   );
 }
 
@@ -135,6 +229,12 @@ export function createLobbyState(roomId: string, at = nowMs()): RoomState {
     phaseEndsAt: at,
     updatedAt: at,
     participants: [],
+    allowedPlayerIds: [],
+    guessSubmissions: {},
+    timelineSubmissions: {},
+    timelineRoundIds: [],
+    scores: {},
+    roundBreakdowns: {},
   };
 }
 
@@ -157,7 +257,16 @@ function withPhase(
 }
 
 export function startRoomGame(state: RoomState, at = nowMs()): RoomState {
-  return withPhase(state, "LISTEN", 0, at, "running");
+  const lockedPlayerIds = [...new Set(state.participants.map((participant) => participant.id))];
+  return {
+    ...withPhase(state, "LISTEN", 0, at, "running"),
+    allowedPlayerIds: lockedPlayerIds,
+    guessSubmissions: {},
+    timelineSubmissions: {},
+    timelineRoundIds: [],
+    scores: {},
+    roundBreakdowns: {},
+  };
 }
 
 export function advanceRoomPhase(state: RoomState, at = nowMs()): RoomState {
@@ -182,6 +291,11 @@ export function advanceRoomPhase(state: RoomState, at = nowMs()): RoomState {
     }
 
     return withPhase(state, "LISTEN", state.roundIndex + 1, at, "running");
+  }
+
+  if (state.phase === "LISTEN" && nextPhase === "REVEAL") {
+    const resolved = resolveRoundIfNeeded(state, at);
+    return withPhase(resolved, nextPhase, resolved.roundIndex, at, "running");
   }
 
   return withPhase(state, nextPhase, state.roundIndex, at, "running");
@@ -223,12 +337,17 @@ function upsertParticipantInState(
   participant: Pick<RoomParticipant, "id" | "name">,
   at = nowMs(),
 ) {
+  const participantId = participant.id.trim();
+  if (!participantId) {
+    return roomState;
+  }
+
   const normalizedName = participant.name.trim();
   if (!normalizedName) {
     return roomState;
   }
 
-  const existingIndex = roomState.participants.findIndex(({ id }) => id === participant.id);
+  const existingIndex = roomState.participants.findIndex(({ id }) => id === participantId);
   if (existingIndex >= 0) {
     const existing = roomState.participants[existingIndex]!;
     const shouldSkipUpdate = existing.name === normalizedName && at - existing.lastSeenAt < 2_000;
@@ -246,8 +365,12 @@ function upsertParticipantInState(
     return {
       ...roomState,
       participants: nextParticipants,
-      updatedAt: at,
+      updatedAt: roomState.updatedAt,
     };
+  }
+
+  if (roomState.lifecycle === "running" && !roomState.allowedPlayerIds.includes(participantId)) {
+    return roomState;
   }
 
   return {
@@ -255,14 +378,18 @@ function upsertParticipantInState(
     participants: [
       ...roomState.participants,
       {
-        id: participant.id,
+        id: participantId,
         name: normalizedName,
         color: colorForParticipantIndex(roomState.participants.length),
         joinedAt: at,
         lastSeenAt: at,
       },
     ],
-    updatedAt: at,
+    allowedPlayerIds:
+      roomState.lifecycle === "lobby" && !roomState.allowedPlayerIds.includes(participantId)
+        ? [...roomState.allowedPlayerIds, participantId]
+        : roomState.allowedPlayerIds,
+    updatedAt: roomState.updatedAt,
   };
 }
 
@@ -275,7 +402,201 @@ function removeParticipantInState(roomState: RoomState, participantId: string, a
   return {
     ...roomState,
     participants: nextParticipants,
+    updatedAt: roomState.updatedAt,
+  };
+}
+
+function guessSubmissionKey(playerId: string, roundId: string) {
+  return `${playerId}:${roundId}`;
+}
+
+function timelineSubmissionKey(playerId: string, roundId: string) {
+  return `${playerId}:${roundId}`;
+}
+
+function knownTimelineRounds(state: RoomState) {
+  return state.timelineRoundIds
+    .map((roundId) => mockRounds.find((round) => round.id === roundId))
+    .filter((round): round is (typeof mockRounds)[number] => Boolean(round))
+    .sort((a, b) => a.year - b.year || a.title.localeCompare(b.title));
+}
+
+function clampInsertIndex(insertIndex: number, max: number) {
+  if (!Number.isFinite(insertIndex)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(max, Math.floor(insertIndex)));
+}
+
+function isTimelinePlacementCorrect(state: RoomState, round: (typeof mockRounds)[number], insertIndex: number) {
+  const timeline = knownTimelineRounds(state);
+  const clamped = clampInsertIndex(insertIndex, timeline.length);
+  const leftYear = clamped > 0 ? timeline[clamped - 1]!.year : Number.NEGATIVE_INFINITY;
+  const rightYear = clamped < timeline.length ? timeline[clamped]!.year : Number.POSITIVE_INFINITY;
+  return round.year >= leftYear && round.year <= rightYear;
+}
+
+function decayedPoints(
+  maxPoints: number,
+  submittedAt: number | undefined,
+  phaseStartedAt: number,
+  phaseEndsAt: number,
+) {
+  if (!submittedAt) {
+    return 0;
+  }
+
+  const clampedAt = Math.max(phaseStartedAt, Math.min(submittedAt, phaseEndsAt));
+  const duration = Math.max(1, phaseEndsAt - phaseStartedAt);
+  const ratio = 1 - (clampedAt - phaseStartedAt) / duration;
+  return Math.max(0, Math.round(maxPoints * ratio));
+}
+
+function ensureScoreKeys(state: RoomState) {
+  const scores = { ...state.scores };
+  for (const playerId of state.allowedPlayerIds) {
+    if (typeof scores[playerId] !== "number") {
+      scores[playerId] = 0;
+    }
+  }
+  return scores;
+}
+
+function resolveRoundIfNeeded(state: RoomState, at = nowMs()): RoomState {
+  const round = getActiveRound(state);
+  if (state.roundBreakdowns[round.id]) {
+    return state;
+  }
+
+  const scores = ensureScoreKeys(state);
+  const players: Record<string, RoundPlayerBreakdown> = {};
+
+  for (const playerId of state.allowedPlayerIds) {
+    const guess = state.guessSubmissions[guessSubmissionKey(playerId, round.id)];
+    const timeline = state.timelineSubmissions[timelineSubmissionKey(playerId, round.id)];
+
+    const trackCorrect = guess?.trackId === round.trackId;
+    const artistCorrect = guess?.artistId === round.artistId;
+    const timelineCorrect =
+      typeof timeline?.insertIndex === "number" ? isTimelinePlacementCorrect(state, round, timeline.insertIndex) : false;
+
+    const trackPoints = trackCorrect
+      ? decayedPoints(scoringMaxPoints.track, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
+      : 0;
+    const artistPoints = artistCorrect
+      ? decayedPoints(scoringMaxPoints.artist, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
+      : 0;
+    const timelinePoints = timelineCorrect
+      ? decayedPoints(scoringMaxPoints.timeline, timeline?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
+      : 0;
+    const total = trackPoints + artistPoints + timelinePoints;
+
+    scores[playerId] = (scores[playerId] ?? 0) + total;
+    players[playerId] = {
+      playerId,
+      guessCorrect: {
+        track: trackCorrect,
+        artist: artistCorrect,
+      },
+      timelineCorrect,
+      points: {
+        track: trackPoints,
+        artist: artistPoints,
+        timeline: timelinePoints,
+        total,
+      },
+    };
+  }
+
+  return {
+    ...state,
+    scores,
+    timelineRoundIds: state.timelineRoundIds.includes(round.id) ? state.timelineRoundIds : [...state.timelineRoundIds, round.id],
+    roundBreakdowns: {
+      ...state.roundBreakdowns,
+      [round.id]: {
+        roundId: round.id,
+        resolvedAt: at,
+        players,
+      },
+    },
     updatedAt: at,
+  };
+}
+
+function submitGuessInState(
+  roomState: RoomState,
+  submission: Pick<GuessSubmission, "playerId" | "roundId" | "trackId" | "artistId">,
+  at = nowMs(),
+) {
+  const playerId = submission.playerId.trim();
+  const roundId = submission.roundId.trim();
+  const trackId = submission.trackId.trim();
+  const artistId = submission.artistId.trim();
+  if (!playerId || !roundId || !trackId || !artistId) {
+    return roomState;
+  }
+
+  const key = guessSubmissionKey(playerId, roundId);
+  if (roomState.guessSubmissions[key]) {
+    return roomState;
+  }
+
+  if (roomState.lifecycle === "running" && !roomState.allowedPlayerIds.includes(playerId)) {
+    return roomState;
+  }
+
+  return {
+    ...roomState,
+    guessSubmissions: {
+      ...roomState.guessSubmissions,
+      [key]: {
+        playerId,
+        roundId,
+        trackId,
+        artistId,
+        submittedAt: at,
+      },
+    },
+    updatedAt: roomState.updatedAt,
+  };
+}
+
+function submitTimelineInState(
+  roomState: RoomState,
+  submission: Pick<TimelineSubmission, "playerId" | "roundId" | "insertIndex">,
+  at = nowMs(),
+) {
+  const playerId = submission.playerId.trim();
+  const roundId = submission.roundId.trim();
+  if (!playerId || !roundId || !Number.isFinite(submission.insertIndex)) {
+    return roomState;
+  }
+
+  const key = timelineSubmissionKey(playerId, roundId);
+  if (roomState.timelineSubmissions[key]) {
+    return roomState;
+  }
+
+  if (roomState.lifecycle === "running" && !roomState.allowedPlayerIds.includes(playerId)) {
+    return roomState;
+  }
+
+  const clampedInsertIndex = clampInsertIndex(submission.insertIndex, knownTimelineRounds(roomState).length + 1);
+
+  return {
+    ...roomState,
+    timelineSubmissions: {
+      ...roomState.timelineSubmissions,
+      [key]: {
+        playerId,
+        roundId,
+        insertIndex: clampedInsertIndex,
+        submittedAt: at,
+      },
+    },
+    updatedAt: roomState.updatedAt,
   };
 }
 
@@ -372,7 +693,7 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
       }
 
       try {
-        const remote = JSON.parse((event as MessageEvent<string>).data) as RoomState;
+        const remote = normalizeRoomState(JSON.parse((event as MessageEvent<string>).data) as RoomState);
         syncRemoteIfNewer(remote);
       } catch {
         // Ignore malformed events.
@@ -496,6 +817,42 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
             void postRoomCommand(roomId, {
               type: "remove_participant",
               participantId,
+            })
+              .then((remote) => {
+                syncRemoteIfNewer(remote);
+              })
+              .catch(() => {
+                // Best-effort in local dev.
+              });
+          }
+          return nextState;
+        });
+      },
+      submitGuess: (submission: Pick<GuessSubmission, "playerId" | "roundId" | "trackId" | "artistId">) => {
+        setState((prevState) => {
+          const nextState = submitGuessInState(prevState, submission);
+          if (nextState !== prevState) {
+            void postRoomCommand(roomId, {
+              type: "submit_guess",
+              submission,
+            })
+              .then((remote) => {
+                syncRemoteIfNewer(remote);
+              })
+              .catch(() => {
+                // Best-effort in local dev.
+              });
+          }
+          return nextState;
+        });
+      },
+      submitTimeline: (submission: Pick<TimelineSubmission, "playerId" | "roundId" | "insertIndex">) => {
+        setState((prevState) => {
+          const nextState = submitTimelineInState(prevState, submission);
+          if (nextState !== prevState) {
+            void postRoomCommand(roomId, {
+              type: "submit_timeline",
+              submission,
             })
               .then((remote) => {
                 syncRemoteIfNewer(remote);

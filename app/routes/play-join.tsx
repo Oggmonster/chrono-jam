@@ -17,8 +17,10 @@ export default function PlayJoin() {
   const navigate = useNavigate();
   const [roomCode, setRoomCode] = useState("8372");
   const [playerName, setPlayerName] = useState("");
+  const [joinError, setJoinError] = useState("");
+  const [joining, setJoining] = useState(false);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalized = normalizeRoomCode(roomCode);
     const trimmedName = playerName.trim();
@@ -29,10 +31,40 @@ export default function PlayJoin() {
       return;
     }
 
+    setJoinError("");
+    setJoining(true);
     const existingSession = getPlayerSession(normalized);
+    const candidateId = existingSession?.id ?? createPlayerId();
+
+    try {
+      const response = await fetch(`/api/room/${encodeURIComponent(normalized)}`, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const room = (await response.json()) as {
+          lifecycle?: string;
+          allowedPlayerIds?: string[];
+        };
+        const running = room.lifecycle === "running";
+        const allowedPlayerIds = Array.isArray(room.allowedPlayerIds) ? room.allowedPlayerIds : [];
+        if (running && !allowedPlayerIds.includes(candidateId)) {
+          setJoinError("Game already started. New players cannot join this round.");
+          return;
+        }
+      }
+    } catch {
+      // Let join continue if the check endpoint is temporarily unavailable.
+    } finally {
+      setJoining(false);
+    }
 
     savePlayerSession(normalized, {
-      id: existingSession?.id ?? createPlayerId(),
+      id: candidateId,
       name: trimmedName,
     });
 
@@ -55,7 +87,10 @@ export default function PlayJoin() {
                 Room code
                 <Input
                   value={roomCode}
-                  onChange={(event) => setRoomCode(event.target.value)}
+                  onChange={(event) => {
+                    setRoomCode(event.target.value);
+                    setJoinError("");
+                  }}
                   placeholder="8372"
                   maxLength={8}
                 />
@@ -64,14 +99,20 @@ export default function PlayJoin() {
                 Your name
                 <Input
                   value={playerName}
-                  onChange={(event) => setPlayerName(event.target.value)}
+                  onChange={(event) => {
+                    setPlayerName(event.target.value);
+                    setJoinError("");
+                  }}
                   placeholder="e.g. Alex"
                   maxLength={20}
                 />
               </label>
+              {joinError ? (
+                <p className="text-sm font-semibold text-[#8d2e2a]">{joinError}</p>
+              ) : null}
 
               <div className="flex flex-wrap gap-3">
-                <Button type="submit" size="lg" disabled={!playerName.trim()}>
+                <Button type="submit" size="lg" disabled={!playerName.trim() || joining}>
                   Join Lobby
                 </Button>
                 <Button asChild variant="secondary">

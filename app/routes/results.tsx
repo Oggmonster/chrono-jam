@@ -14,11 +14,13 @@ export function meta({}: Route.MetaArgs) {
 export default function Results({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const room = useRoomState(roomId, "player");
-  const ranking = room.state.participants.map((participant, index) => ({
-    id: participant.id,
-    name: participant.name,
-    points: Math.max(200, 1000 - index * 200),
-  }));
+  const ranking = [...room.state.participants]
+    .map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      points: room.state.scores[participant.id] ?? 0,
+    }))
+    .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
 
   return (
     <main className="jam-page">
@@ -31,7 +33,7 @@ export default function Results({ params }: Route.ComponentProps) {
 
         <Card className="mt-5">
           <CardHeader>
-            <CardTitle>Leaderboard (Temporary Points)</CardTitle>
+            <CardTitle>Leaderboard</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {ranking.map((entry, index) => (

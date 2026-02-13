@@ -1,4 +1,4 @@
-type GamePhase = "LISTEN" | "GUESS" | "TIMELINE" | "REVEAL" | "INTERMISSION";
+type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
 type RoomLifecycle = "lobby" | "running" | "finished";
 
 type StoredParticipant = {
@@ -7,6 +7,42 @@ type StoredParticipant = {
   color: string;
   joinedAt: number;
   lastSeenAt: number;
+};
+
+type StoredGuessSubmission = {
+  playerId: string;
+  roundId: string;
+  trackId: string;
+  artistId: string;
+  submittedAt: number;
+};
+
+type StoredTimelineSubmission = {
+  playerId: string;
+  roundId: string;
+  insertIndex: number;
+  submittedAt: number;
+};
+
+type StoredRoundPlayerBreakdown = {
+  playerId: string;
+  guessCorrect: {
+    track: boolean;
+    artist: boolean;
+  };
+  timelineCorrect: boolean;
+  points: {
+    track: number;
+    artist: number;
+    timeline: number;
+    total: number;
+  };
+};
+
+type StoredRoundBreakdown = {
+  roundId: string;
+  resolvedAt: number;
+  players: Record<string, StoredRoundPlayerBreakdown>;
 };
 
 export type StoredRoomState = {
@@ -18,6 +54,12 @@ export type StoredRoomState = {
   phaseEndsAt: number;
   updatedAt: number;
   participants: StoredParticipant[];
+  allowedPlayerIds: string[];
+  guessSubmissions: Record<string, StoredGuessSubmission>;
+  timelineSubmissions: Record<string, StoredTimelineSubmission>;
+  timelineRoundIds: string[];
+  scores: Record<string, number>;
+  roundBreakdowns: Record<string, StoredRoundBreakdown>;
 };
 
 const participantColors = ["#4ec7e0", "#f28d35", "#e45395", "#7bcf4b", "#7d6cfc", "#ff7f5c"];
@@ -98,6 +140,12 @@ export function createStoredRoomState(roomId: string, at = nowMs()): StoredRoomS
     phaseEndsAt: at,
     updatedAt: at,
     participants: [],
+    allowedPlayerIds: [],
+    guessSubmissions: {},
+    timelineSubmissions: {},
+    timelineRoundIds: [],
+    scores: {},
+    roundBreakdowns: {},
   };
 }
 
@@ -110,13 +158,7 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
   const at = nowMs();
   const lifecycle: RoomLifecycle =
     state.lifecycle === "running" || state.lifecycle === "finished" ? state.lifecycle : "lobby";
-  const phase: GamePhase =
-    state.phase === "GUESS" ||
-    state.phase === "TIMELINE" ||
-    state.phase === "REVEAL" ||
-    state.phase === "INTERMISSION"
-      ? state.phase
-      : "LISTEN";
+  const phase: GamePhase = state.phase === "REVEAL" || state.phase === "INTERMISSION" ? state.phase : "LISTEN";
 
   const participants = Array.isArray(state.participants)
     ? state.participants
@@ -133,6 +175,136 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
         }))
     : [];
 
+  const allowedPlayerIds = Array.isArray(state.allowedPlayerIds)
+    ? [
+        ...new Set(
+          state.allowedPlayerIds.filter(
+            (id): id is string => typeof id === "string" && id.trim().length > 0,
+          ),
+        ),
+      ]
+    : [];
+
+  const guessSubmissionsEntries = state.guessSubmissions;
+  const guessSubmissions: Record<string, StoredGuessSubmission> = {};
+  if (guessSubmissionsEntries && typeof guessSubmissionsEntries === "object") {
+    for (const [key, value] of Object.entries(guessSubmissionsEntries)) {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        typeof value.playerId === "string" &&
+        typeof value.roundId === "string" &&
+        typeof value.trackId === "string" &&
+        typeof value.artistId === "string" &&
+        typeof value.submittedAt === "number"
+      ) {
+        guessSubmissions[key] = {
+          playerId: value.playerId,
+          roundId: value.roundId,
+          trackId: value.trackId,
+          artistId: value.artistId,
+          submittedAt: value.submittedAt,
+        };
+      }
+    }
+  }
+
+  const timelineSubmissionsEntries = state.timelineSubmissions;
+  const timelineSubmissions: Record<string, StoredTimelineSubmission> = {};
+  if (timelineSubmissionsEntries && typeof timelineSubmissionsEntries === "object") {
+    for (const [key, value] of Object.entries(timelineSubmissionsEntries)) {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        typeof value.playerId === "string" &&
+        typeof value.roundId === "string" &&
+        typeof value.insertIndex === "number" &&
+        typeof value.submittedAt === "number"
+      ) {
+        timelineSubmissions[key] = {
+          playerId: value.playerId,
+          roundId: value.roundId,
+          insertIndex: value.insertIndex,
+          submittedAt: value.submittedAt,
+        };
+      }
+    }
+  }
+
+  const timelineRoundIds = Array.isArray(state.timelineRoundIds)
+    ? state.timelineRoundIds.filter((roundId): roundId is string => typeof roundId === "string" && roundId.length > 0)
+    : [];
+
+  const scoresEntries = state.scores;
+  const scores: Record<string, number> = {};
+  if (scoresEntries && typeof scoresEntries === "object") {
+    for (const [playerId, points] of Object.entries(scoresEntries)) {
+      if (typeof points === "number" && Number.isFinite(points)) {
+        scores[playerId] = points;
+      }
+    }
+  }
+
+  const roundBreakdownsEntries = state.roundBreakdowns;
+  const roundBreakdowns: Record<string, StoredRoundBreakdown> = {};
+  if (roundBreakdownsEntries && typeof roundBreakdownsEntries === "object") {
+    for (const [roundId, rawBreakdown] of Object.entries(roundBreakdownsEntries)) {
+      if (
+        typeof rawBreakdown !== "object" ||
+        rawBreakdown === null ||
+        typeof rawBreakdown.roundId !== "string" ||
+        typeof rawBreakdown.resolvedAt !== "number" ||
+        typeof rawBreakdown.players !== "object" ||
+        rawBreakdown.players === null
+      ) {
+        continue;
+      }
+
+      const players: Record<string, StoredRoundPlayerBreakdown> = {};
+      for (const [playerId, rawPlayerBreakdown] of Object.entries(rawBreakdown.players)) {
+        if (
+          typeof rawPlayerBreakdown !== "object" ||
+          rawPlayerBreakdown === null ||
+          typeof rawPlayerBreakdown.playerId !== "string" ||
+          typeof rawPlayerBreakdown.guessCorrect !== "object" ||
+          rawPlayerBreakdown.guessCorrect === null ||
+          typeof rawPlayerBreakdown.guessCorrect.track !== "boolean" ||
+          typeof rawPlayerBreakdown.guessCorrect.artist !== "boolean" ||
+          typeof rawPlayerBreakdown.timelineCorrect !== "boolean" ||
+          typeof rawPlayerBreakdown.points !== "object" ||
+          rawPlayerBreakdown.points === null ||
+          typeof rawPlayerBreakdown.points.track !== "number" ||
+          typeof rawPlayerBreakdown.points.artist !== "number" ||
+          typeof rawPlayerBreakdown.points.timeline !== "number" ||
+          typeof rawPlayerBreakdown.points.total !== "number"
+        ) {
+          continue;
+        }
+
+        players[playerId] = {
+          playerId: rawPlayerBreakdown.playerId,
+          guessCorrect: {
+            track: rawPlayerBreakdown.guessCorrect.track,
+            artist: rawPlayerBreakdown.guessCorrect.artist,
+          },
+          timelineCorrect: rawPlayerBreakdown.timelineCorrect,
+          points: {
+            track: rawPlayerBreakdown.points.track,
+            artist: rawPlayerBreakdown.points.artist,
+            timeline: rawPlayerBreakdown.points.timeline,
+            total: rawPlayerBreakdown.points.total,
+          },
+        };
+      }
+
+      roundBreakdowns[roundId] = {
+        roundId: rawBreakdown.roundId,
+        resolvedAt: rawBreakdown.resolvedAt,
+        players,
+      };
+    }
+  }
+
   return {
     roomId,
     lifecycle,
@@ -142,6 +314,12 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
     phaseEndsAt: Number(state.phaseEndsAt ?? at),
     updatedAt: Number(state.updatedAt ?? at),
     participants,
+    allowedPlayerIds,
+    guessSubmissions,
+    timelineSubmissions,
+    timelineRoundIds,
+    scores,
+    roundBreakdowns,
   };
 }
 
@@ -170,6 +348,69 @@ function ensureRoomState(roomId: string, options: { notifyOnPrune?: boolean } = 
     return created;
   }
 
+  if (!existing.guessSubmissions || typeof existing.guessSubmissions !== "object") {
+    const patched = {
+      ...existing,
+      guessSubmissions: {},
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!existing.timelineSubmissions || typeof existing.timelineSubmissions !== "object") {
+    const patched = {
+      ...existing,
+      timelineSubmissions: {},
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!Array.isArray(existing.timelineRoundIds)) {
+    const patched = {
+      ...existing,
+      timelineRoundIds: [],
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!existing.scores || typeof existing.scores !== "object") {
+    const patched = {
+      ...existing,
+      scores: {},
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!existing.roundBreakdowns || typeof existing.roundBreakdowns !== "object") {
+    const patched = {
+      ...existing,
+      roundBreakdowns: {},
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!Array.isArray(existing.allowedPlayerIds)) {
+    const patched = {
+      ...existing,
+      allowedPlayerIds: existing.participants.map((participant) => participant.id),
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (existing.phase !== "LISTEN" && existing.phase !== "REVEAL" && existing.phase !== "INTERMISSION") {
+    const patched = {
+      ...existing,
+      phase: "LISTEN" as GamePhase,
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
   const next = pruneStaleParticipants(existing);
   if (next !== existing) {
     return setStoredRoomState(roomId, next, { notify: notifyOnPrune });
@@ -190,13 +431,18 @@ export function replaceRoomState(roomId: string, incoming: unknown): StoredRoomS
 
 export function upsertParticipant(roomId: string, participant: { id: string; name: string }): StoredRoomState {
   const base = ensureRoomState(roomId, { notifyOnPrune: false });
+  const participantId = participant.id.trim();
+  if (!participantId) {
+    return base;
+  }
+
   const normalizedName = participant.name.trim();
   if (!normalizedName) {
     return base;
   }
 
   const at = nowMs();
-  const existingIndex = base.participants.findIndex(({ id }) => id === participant.id);
+  const existingIndex = base.participants.findIndex(({ id }) => id === participantId);
   if (existingIndex >= 0) {
     const existing = base.participants[existingIndex]!;
     const shouldSkipUpdate = existing.name === normalizedName && at - existing.lastSeenAt < 2_000;
@@ -219,18 +465,26 @@ export function upsertParticipant(roomId: string, participant: { id: string; nam
     return setStoredRoomState(roomId, nextState);
   }
 
+  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(participantId)) {
+    return base;
+  }
+
   const nextState = {
     ...base,
     participants: [
       ...base.participants,
       {
-        id: participant.id,
+        id: participantId,
         name: normalizedName,
         color: colorForParticipantIndex(base.participants.length),
         joinedAt: at,
         lastSeenAt: at,
       },
     ],
+    allowedPlayerIds:
+      base.lifecycle === "lobby" && !base.allowedPlayerIds.includes(participantId)
+        ? [...base.allowedPlayerIds, participantId]
+        : base.allowedPlayerIds,
     updatedAt: at,
   };
   return setStoredRoomState(roomId, nextState);
@@ -248,6 +502,91 @@ export function removeParticipant(roomId: string, participantId: string): Stored
     participants: nextParticipants,
     updatedAt: nowMs(),
   };
+  return setStoredRoomState(roomId, nextState);
+}
+
+function guessSubmissionKey(playerId: string, roundId: string) {
+  return `${playerId}:${roundId}`;
+}
+
+function timelineSubmissionKey(playerId: string, roundId: string) {
+  return `${playerId}:${roundId}`;
+}
+
+export function upsertGuessSubmission(
+  roomId: string,
+  submission: Pick<StoredGuessSubmission, "playerId" | "roundId" | "trackId" | "artistId">,
+): StoredRoomState {
+  const base = ensureRoomState(roomId, { notifyOnPrune: false });
+  const playerId = submission.playerId.trim();
+  const roundId = submission.roundId.trim();
+  const trackId = submission.trackId.trim();
+  const artistId = submission.artistId.trim();
+  if (!playerId || !roundId || !trackId || !artistId) {
+    return base;
+  }
+
+  const key = guessSubmissionKey(playerId, roundId);
+  if (base.guessSubmissions[key]) {
+    return base;
+  }
+
+  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(playerId)) {
+    return base;
+  }
+
+  const nextState = {
+    ...base,
+    guessSubmissions: {
+      ...base.guessSubmissions,
+      [key]: {
+        playerId,
+        roundId,
+        trackId,
+        artistId,
+        submittedAt: nowMs(),
+      },
+    },
+    updatedAt: nowMs(),
+  };
+
+  return setStoredRoomState(roomId, nextState);
+}
+
+export function upsertTimelineSubmission(
+  roomId: string,
+  submission: Pick<StoredTimelineSubmission, "playerId" | "roundId" | "insertIndex">,
+): StoredRoomState {
+  const base = ensureRoomState(roomId, { notifyOnPrune: false });
+  const playerId = submission.playerId.trim();
+  const roundId = submission.roundId.trim();
+  if (!playerId || !roundId || !Number.isFinite(submission.insertIndex)) {
+    return base;
+  }
+
+  const key = timelineSubmissionKey(playerId, roundId);
+  if (base.timelineSubmissions[key]) {
+    return base;
+  }
+
+  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(playerId)) {
+    return base;
+  }
+
+  const nextState = {
+    ...base,
+    timelineSubmissions: {
+      ...base.timelineSubmissions,
+      [key]: {
+        playerId,
+        roundId,
+        insertIndex: Math.max(0, Math.floor(submission.insertIndex)),
+        submittedAt: nowMs(),
+      },
+    },
+    updatedAt: nowMs(),
+  };
+
   return setStoredRoomState(roomId, nextState);
 }
 
