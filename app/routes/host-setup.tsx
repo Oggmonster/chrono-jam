@@ -12,8 +12,6 @@ import {
   isTokenExpiring,
   readStoredSpotifyToken,
   refreshSpotifyAccessToken,
-  spotifyTokenExpiryKey,
-  spotifyTokenKey,
   storeSpotifyToken,
 } from "~/lib/spotify-token";
 
@@ -27,6 +25,7 @@ export default function HostSetup() {
   const [roomCode, setRoomCode] = useState("");
   const [token, setToken] = useState("");
   const [statusText, setStatusText] = useState("");
+  const [refreshingToken, setRefreshingToken] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -76,20 +75,49 @@ export default function HostSetup() {
       storeSpotifyToken(oauthToken, Number(oauthExpiry));
       setStatusText("Spotify connected. Access token saved.");
     } else {
-      window.localStorage.setItem(spotifyTokenKey, oauthToken);
+      storeSpotifyToken(oauthToken, 60 * 60);
       setStatusText("Spotify connected. Access token saved.");
     }
   }, [searchParams]);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const refreshToken = () => {
+    setRefreshingToken(true);
+    void refreshSpotifyAccessToken()
+      .then(({ accessToken, expiresIn }) => {
+        storeSpotifyToken(accessToken, expiresIn);
+        setToken(accessToken);
+        setStatusText("Spotify token refreshed.");
+      })
+      .catch(() => {
+        setStatusText("Spotify token refresh failed. Reconnect Spotify.");
+      })
+      .finally(() => {
+        setRefreshingToken(false);
+      });
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const normalized = normalizeRoomCode(roomCode) || generateRoomCode();
 
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(spotifyTokenKey, token.trim());
-      if (!window.localStorage.getItem(spotifyTokenExpiryKey)) {
-        window.localStorage.setItem(spotifyTokenExpiryKey, String(Date.now() + 60 * 60 * 1000));
+      const trimmedToken = token.trim();
+      if (trimmedToken) {
+        storeSpotifyToken(trimmedToken, 60 * 60);
+      } else {
+        const stored = readStoredSpotifyToken();
+        if (!stored.accessToken) {
+          try {
+            const refreshed = await refreshSpotifyAccessToken();
+            storeSpotifyToken(refreshed.accessToken, refreshed.expiresIn);
+            setToken(refreshed.accessToken);
+            setStatusText("Spotify token refreshed.");
+          } catch {
+            setStatusText("No valid Spotify token. Connect Spotify before continuing.");
+            return;
+          }
+        }
       }
     }
 
@@ -141,6 +169,9 @@ export default function HostSetup() {
               <div className="mt-2 flex flex-wrap gap-3">
                 <Button asChild variant="default" size="lg">
                   <a href={connectHref}>Connect Spotify</a>
+                </Button>
+                <Button type="button" variant="outline" onClick={refreshToken} disabled={refreshingToken}>
+                  {refreshingToken ? "Refreshing..." : "Refresh Token"}
                 </Button>
                 <Button type="submit" variant="success" size="lg">
                   Continue To Lobby

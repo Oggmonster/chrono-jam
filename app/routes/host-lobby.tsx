@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Route } from "./+types/host-lobby";
 import { Link, useNavigate } from "react-router";
 
@@ -8,6 +8,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { useRoomState } from "~/lib/game-engine";
+import { isTokenExpiring, readStoredSpotifyToken, refreshSpotifyAccessToken } from "~/lib/spotify-token";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Lobby" }];
@@ -17,6 +18,9 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const navigate = useNavigate();
   const room = useRoomState(roomId, "host");
+  const [spotifyTokenPresent, setSpotifyTokenPresent] = useState(false);
+  const [spotifyTokenStatus, setSpotifyTokenStatus] = useState("");
+  const [refreshingToken, setRefreshingToken] = useState(false);
   const readinessRows = useMemo(
     () =>
       room.state.participants.map((player) => {
@@ -37,6 +41,45 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   const allReady = readinessRows.length > 0 && readyCount === readinessRows.length;
   const canStartNormally = room.state.participants.length === 0 || allReady;
 
+  const checkTokenStatus = async () => {
+    const stored = readStoredSpotifyToken();
+    setSpotifyTokenPresent(Boolean(stored.accessToken));
+
+    if (!stored.accessToken) {
+      return;
+    }
+
+    if (!isTokenExpiring(stored.expiresAt)) {
+      return;
+    }
+
+    try {
+      setRefreshingToken(true);
+      await refreshSpotifyAccessToken();
+      setSpotifyTokenPresent(true);
+      setSpotifyTokenStatus("Spotify token refreshed.");
+    } catch {
+      setSpotifyTokenStatus("Spotify token refresh failed. Reconnect Spotify.");
+    } finally {
+      setRefreshingToken(false);
+    }
+  };
+
+  const refreshTokenNow = () => {
+    setRefreshingToken(true);
+    void refreshSpotifyAccessToken()
+      .then(() => {
+        setSpotifyTokenPresent(true);
+        setSpotifyTokenStatus("Spotify token refreshed.");
+      })
+      .catch(() => {
+        setSpotifyTokenStatus("Spotify token refresh failed. Reconnect Spotify.");
+      })
+      .finally(() => {
+        setRefreshingToken(false);
+      });
+  };
+
   useEffect(() => {
     if (room.state.lifecycle !== "running") {
       return;
@@ -44,6 +87,17 @@ export default function HostLobby({ params }: Route.ComponentProps) {
 
     navigate(`/host/game/${roomId}`, { replace: true });
   }, [navigate, room.state.lifecycle, roomId]);
+
+  useEffect(() => {
+    void checkTokenStatus();
+    const timer = window.setInterval(() => {
+      void checkTokenStatus();
+    }, 15_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   return (
     <main className="jam-page">
@@ -58,7 +112,7 @@ export default function HostLobby({ params }: Route.ComponentProps) {
           <Badge>{room.state.lifecycle.toUpperCase()}</Badge>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle>Players</CardTitle>
@@ -108,6 +162,25 @@ export default function HostLobby({ params }: Route.ComponentProps) {
               {readinessRows.length === 0 ? (
                 <p className="text-center text-sm font-semibold text-[#51449e]">Waiting for players to join.</p>
               ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Spotify Token</CardTitle>
+              <CardDescription>Refresh here before starting to keep autoplay reliable.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#1f1f55]">
+                <Badge variant={spotifyTokenPresent ? "success" : "warning"}>
+                  {spotifyTokenPresent ? "OK" : "Missing"}
+                </Badge>
+                Host token
+              </p>
+              {spotifyTokenStatus ? <p className="text-xs font-semibold text-[#4f5fa2]">{spotifyTokenStatus}</p> : null}
+              <Button variant="outline" onClick={refreshTokenNow} disabled={refreshingToken}>
+                {refreshingToken ? "Refreshing..." : "Refresh Token"}
+              </Button>
             </CardContent>
           </Card>
         </div>

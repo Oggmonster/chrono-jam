@@ -8,6 +8,7 @@ type ProgressProps = React.ComponentProps<"div"> & {
 
 function Progress({ className, value = 0, ...props }: ProgressProps) {
   const safe = Math.max(0, Math.min(100, value));
+  const ariaLabel = props["aria-label"] ?? "Progress";
 
   return (
     <div
@@ -16,6 +17,11 @@ function Progress({ className, value = 0, ...props }: ProgressProps) {
         "relative h-3 w-full overflow-hidden rounded-full bg-[#d0c8ff]",
         className,
       )}
+      role="progressbar"
+      aria-label={ariaLabel}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={safe}
       {...props}
     >
       <div

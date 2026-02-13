@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     dedupe: ["react", "react-dom"],
   },
+  test: {
+    environment: "node",
+    include: ["app/**/*.test.ts"],
+  },
   server: {
     port: 5174,
     strictPort: true,

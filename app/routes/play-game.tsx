@@ -15,7 +15,12 @@ import { buildMockAutocompletePack } from "~/lib/mock-autocomplete";
 import { mockRounds } from "~/lib/mock-room";
 import { usePlayerPresence } from "~/lib/player-presence";
 import { getPlayerSession, type PlayerSession } from "~/lib/player-session";
-import { buildTimelineEntries, clampTimelineInsertIndex, timelineEntryLabel } from "~/lib/timeline";
+import {
+  buildTimelineEntries,
+  clampTimelineInsertIndex,
+  timelineEntryLabel,
+  timelineSlotLabel,
+} from "~/lib/timeline";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Game" }];
@@ -283,6 +288,19 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       ? clampTimelineInsertIndex(currentTimelineSubmission.insertIndex, timelineEntries.length)
       : null;
   const timelineDisplayInsertIndex = timelinePreviewIndex ?? lockedTimelineInsertIndex;
+  const timelinePositionLabel =
+    timelineDisplayInsertIndex === null ? null : timelineSlotLabel(timelineEntries, timelineDisplayInsertIndex);
+
+  const nudgeTimeline = (delta: number) => {
+    if (!canSubmitTimeline) {
+      return;
+    }
+
+    const baseIndex = timelineDisplayInsertIndex ?? timelineEntries.length;
+    const nextIndex = clampTimelineInsertIndex(baseIndex + delta, timelineEntries.length);
+    submitTimeline(nextIndex);
+    setTimelineHoverSlot(nextIndex);
+  };
 
   return (
     <main className="jam-page">
@@ -304,12 +322,16 @@ export default function PlayGame({ params }: Route.ComponentProps) {
             <CardDescription>{phaseInstruction(room.state.phase)}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Progress value={progress} />
-            <p className="text-right text-sm font-bold text-[#2d2a77]">
+            <Progress value={progress} aria-label="Round phase progress" />
+            <p className="text-right text-sm font-bold text-[#2d2a77]" role="status" aria-live="polite">
               {room.state.lifecycle === "running" ? `${Math.ceil(room.remainingMs / 1000)}s` : "Waiting"}
             </p>
 
-            <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]">
+            <div
+              className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]"
+              role="status"
+              aria-live="polite"
+            >
               {intermissionOpen ? (
                 <>
                   <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Intermission</p>
@@ -356,17 +378,27 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   autoCapitalize="none"
                   spellCheck={false}
                   inputMode="search"
+                  aria-autocomplete="list"
+                  aria-controls="track-guess-listbox"
+                  aria-expanded={
+                    canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2
+                  }
                   disabled={!canEditGuess}
                 />
                 {selectedTrack && !intermissionOpen ? (
                   <span className="text-xs font-semibold text-[#22438f]">Selected: {selectedTrack.display}</span>
                 ) : null}
                 {canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2 ? (
-                  <ul className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90">
+                  <ul
+                    id="track-guess-listbox"
+                    role="listbox"
+                    className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90"
+                  >
                     {trackSuggestions.map((suggestion) => (
                       <li key={suggestion.id} className="border-b border-[#cad8ff] last:border-b-0">
                         <button
                           type="button"
+                          role="option"
                           className="w-full px-3 py-2 text-left text-sm font-semibold text-[#223f94] hover:bg-[#eef4ff]"
                           onPointerDown={(event) => {
                             event.preventDefault();
@@ -411,17 +443,27 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   autoCapitalize="none"
                   spellCheck={false}
                   inputMode="search"
+                  aria-autocomplete="list"
+                  aria-controls="artist-guess-listbox"
+                  aria-expanded={
+                    canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2
+                  }
                   disabled={!canEditGuess}
                 />
                 {selectedArtist && !intermissionOpen ? (
                   <span className="text-xs font-semibold text-[#22438f]">Selected: {selectedArtist.display}</span>
                 ) : null}
                 {canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2 ? (
-                  <ul className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90">
+                  <ul
+                    id="artist-guess-listbox"
+                    role="listbox"
+                    className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90"
+                  >
                     {artistSuggestions.map((suggestion) => (
                       <li key={suggestion.id} className="border-b border-[#cad8ff] last:border-b-0">
                         <button
                           type="button"
+                          role="option"
                           className="w-full px-3 py-2 text-left text-sm font-semibold text-[#223f94] hover:bg-[#eef4ff]"
                           onPointerDown={(event) => {
                             event.preventDefault();
@@ -481,6 +523,21 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   ? "Drag the release year between items. You can keep moving it until the timer ends."
                   : "Lock your guess to unlock timeline placement."}
               </p>
+              {currentSubmission ? (
+                <p className="mt-1 text-xs font-semibold text-[#3f4f93]" role="status" aria-live="polite">
+                  Current position: {timelinePositionLabel ?? "Not placed"}
+                </p>
+              ) : null}
+              {canSubmitTimeline ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => nudgeTimeline(-1)}>
+                    Move Earlier
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => nudgeTimeline(1)}>
+                    Move Later
+                  </Button>
+                </div>
+              ) : null}
               <div className="mt-3 rounded-xl border-2 border-dashed border-[#6a7ec2] bg-white px-3 py-2">
                 <div
                   draggable={canSubmitTimeline}
@@ -508,6 +565,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                       ? "cursor-grab border-[#2f4eb8] bg-[#eaf1ff]"
                       : "border-[#c4d1f3] bg-[#f3f7ff] text-[#6a78b0]"
                   }`}
+                  aria-label="Release year marker"
                 >
                   Release year
                 </div>
@@ -515,6 +573,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               <div
                 ref={timelineListRef}
                 className="mt-3 space-y-2"
+                role="list"
+                aria-label="Timeline entries"
                 onDragOver={(event) => {
                   if (!canSubmitTimeline) {
                     return;
@@ -537,7 +597,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 }}
               >
                 {timelineEntries.map((entry, index) => (
-                  <div key={entry.id} className="space-y-2">
+                  <div key={entry.id} className="space-y-2" role="listitem">
                     {timelineDisplayInsertIndex === index ? (
                       <div
                         draggable={canSubmitTimeline && !timelineDragging}

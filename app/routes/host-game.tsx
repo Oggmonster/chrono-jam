@@ -44,7 +44,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
       setToken(stored.accessToken);
     }
 
-    if (stored.accessToken && isTokenExpiring(stored.expiresAt)) {
+    if (!stored.accessToken || isTokenExpiring(stored.expiresAt)) {
       void refreshSpotifyAccessToken()
         .then(({ accessToken, expiresIn }) => {
           storeSpotifyToken(accessToken, expiresIn);
@@ -52,6 +52,10 @@ export default function HostGame({ params }: Route.ComponentProps) {
           setTokenStatus("Token refreshed.");
         })
         .catch(() => {
+          if (!stored.accessToken) {
+            setTokenStatus("Missing token. Reconnect Spotify.");
+            return;
+          }
           setTokenStatus("Token refresh failed. Reconnect Spotify.");
         });
     }
@@ -60,7 +64,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const stored = readStoredSpotifyToken();
-      if (!stored.accessToken || !isTokenExpiring(stored.expiresAt)) {
+      if (!isTokenExpiring(stored.expiresAt)) {
         return;
       }
 
@@ -241,12 +245,18 @@ export default function HostGame({ params }: Route.ComponentProps) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Progress value={progress} />
+            <Progress value={progress} aria-label="Round phase progress" />
             <div className="flex items-center justify-between text-sm font-bold text-[#2d2a77]">
               <span>{phaseLabel(room.state.phase)}</span>
-              <span>{room.state.lifecycle === "running" ? `${remainingSeconds}s` : "idle"}</span>
+              <span role="status" aria-live="polite">
+                {room.state.lifecycle === "running" ? `${remainingSeconds}s` : "idle"}
+              </span>
             </div>
-            <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]">
+            <div
+              className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]"
+              role="status"
+              aria-live="polite"
+            >
               {room.state.lifecycle === "running" && room.state.phase === "LISTEN" ? (
                 <>
                   <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Now Listening...</p>
@@ -326,7 +336,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
                 </Button>
               </div>
 
-              <div className="text-sm font-semibold text-[#2d2a77]">
+              <div className="text-sm font-semibold text-[#2d2a77]" role="status" aria-live="polite">
                 <p>Connected: {spotify.connected ? "yes" : "no"}</p>
                 <p>Ready: {spotify.ready ? "yes" : "no"}</p>
                 <p>Device ID: {spotify.deviceId ?? "-"}</p>
