@@ -1,3 +1,6 @@
+import { mockRounds } from "~/lib/mock-room";
+import { buildTimelineEntries, clampTimelineInsertIndex } from "~/lib/timeline";
+
 type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
 type RoomLifecycle = "lobby" | "running" | "finished";
 
@@ -565,11 +568,13 @@ export function upsertTimelineSubmission(
   }
 
   const key = timelineSubmissionKey(playerId, roundId);
-  if (base.timelineSubmissions[key]) {
+  const guessKey = guessSubmissionKey(playerId, roundId);
+
+  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(playerId)) {
     return base;
   }
 
-  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(playerId)) {
+  if (!base.guessSubmissions[guessKey]) {
     return base;
   }
 
@@ -580,8 +585,11 @@ export function upsertTimelineSubmission(
       [key]: {
         playerId,
         roundId,
-        insertIndex: Math.max(0, Math.floor(submission.insertIndex)),
-        submittedAt: nowMs(),
+        insertIndex: clampTimelineInsertIndex(
+          submission.insertIndex,
+          buildTimelineEntries(base.timelineRoundIds, mockRounds).length,
+        ),
+        submittedAt: base.timelineSubmissions[key]?.submittedAt ?? nowMs(),
       },
     },
     updatedAt: nowMs(),

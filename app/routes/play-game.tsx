@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { Route } from "./+types/play-game";
 import { Link } from "react-router";
 
@@ -15,6 +15,7 @@ import { buildMockAutocompletePack } from "~/lib/mock-autocomplete";
 import { mockRounds } from "~/lib/mock-room";
 import { usePlayerPresence } from "~/lib/player-presence";
 import { getPlayerSession } from "~/lib/player-session";
+import { buildTimelineEntries, clampTimelineInsertIndex, timelineEntryLabel } from "~/lib/timeline";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Game" }];
@@ -23,7 +24,7 @@ export function meta({}: Route.MetaArgs) {
 function phaseInstruction(phase: string) {
   switch (phase) {
     case "LISTEN":
-      return "Listen and guess immediately. Earlier correct answers will score higher once scoring is enabled.";
+      return "Listen and lock your guess quickly for higher points.";
     case "REVEAL":
       return "Review the correct answer and point awards.";
     case "INTERMISSION":
@@ -63,6 +64,9 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const [selectedArtist, setSelectedArtist] = useState<AutocompleteItem | null>(null);
   const [trackInputFocused, setTrackInputFocused] = useState(false);
   const [artistInputFocused, setArtistInputFocused] = useState(false);
+  const [timelineDragging, setTimelineDragging] = useState(false);
+  const [timelineHoverSlot, setTimelineHoverSlot] = useState<number | null>(null);
+  const timelineListRef = useRef<HTMLDivElement | null>(null);
 
   const progress = useMemo(() => {
     if (room.state.lifecycle !== "running") {
@@ -86,51 +90,11 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     room.state.lifecycle === "running" &&
     room.state.phase === "LISTEN" &&
     playerEligible &&
-    Boolean(currentSubmission) &&
-    !currentTimelineSubmission;
+    Boolean(currentSubmission);
 
-  const timelineRounds = useMemo(
-    () =>
-      room.state.timelineRoundIds
-        .map((roundId) => mockRounds.find((round) => round.id === roundId))
-        .filter((round): round is (typeof mockRounds)[number] => Boolean(round))
-        .sort((a, b) => a.year - b.year || a.title.localeCompare(b.title)),
+  const timelineEntries = useMemo(
+    () => buildTimelineEntries(room.state.timelineRoundIds, mockRounds),
     [room.state.timelineRoundIds],
-  );
-
-  const timelineSlots = useMemo(
-    () =>
-      Array.from({ length: timelineRounds.length + 1 }, (_, slotIndex) => {
-        if (timelineRounds.length === 0) {
-          return {
-            slotIndex,
-            label: "Start timeline",
-          };
-        }
-
-        if (slotIndex === 0) {
-          return {
-            slotIndex,
-            label: `Before ${timelineRounds[0]!.title} (${timelineRounds[0]!.year})`,
-          };
-        }
-
-        if (slotIndex === timelineRounds.length) {
-          const last = timelineRounds[timelineRounds.length - 1]!;
-          return {
-            slotIndex,
-            label: `After ${last.title} (${last.year})`,
-          };
-        }
-
-        const left = timelineRounds[slotIndex - 1]!;
-        const right = timelineRounds[slotIndex]!;
-        return {
-          slotIndex,
-          label: `Between ${left.title} (${left.year}) and ${right.title} (${right.year})`,
-        };
-      }),
-    [timelineRounds],
   );
 
   const trackSuggestions = useMemo(() => {
@@ -154,6 +118,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     setSelectedArtist(null);
     setTrackInputFocused(false);
     setArtistInputFocused(false);
+    setTimelineDragging(false);
+    setTimelineHoverSlot(null);
   }, [room.round.id]);
 
   useEffect(() => {
@@ -167,6 +133,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     setSelectedArtist(null);
     setTrackInputFocused(false);
     setArtistInputFocused(false);
+    setTimelineDragging(false);
+    setTimelineHoverSlot(null);
   }, [room.state.phase]);
 
   useEffect(() => {
@@ -216,12 +184,87 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     });
   };
 
+  const handleTimelineDrop = (insertIndex: number) => {
+    submitTimeline(insertIndex);
+    setTimelineDragging(false);
+    setTimelineHoverSlot(null);
+  };
+
+  const resolveTimelineInsertIndex = (clientY: number) => {
+    const entryNodes = timelineListRef.current?.querySelectorAll<HTMLElement>("[data-timeline-entry='true']");
+
+    if (!entryNodes || entryNodes.length === 0) {
+      return 0;
+    }
+
+    for (let index = 0; index < entryNodes.length; index += 1) {
+      const rect = entryNodes[index]!.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        return index;
+      }
+    }
+
+    return entryNodes.length;
+  };
+
+  const handleTimelineItemDragOver = (event: DragEvent<HTMLDivElement>, itemIndex: number) => {
+    if (!canSubmitTimeline) {
+      return;
+    }
+
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const insertIndex = event.clientY < rect.top + rect.height / 2 ? itemIndex : itemIndex + 1;
+    setTimelineHoverSlot(insertIndex);
+  };
+
+  useEffect(() => {
+    if (!timelineDragging || !canSubmitTimeline) {
+      return;
+    }
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      const insertIndex = resolveTimelineInsertIndex(event.touches[0]!.clientY);
+      setTimelineHoverSlot(insertIndex);
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      event.preventDefault();
+      const touch = event.changedTouches[0];
+      const insertIndex = touch
+        ? resolveTimelineInsertIndex(touch.clientY)
+        : timelineHoverSlot ?? timelineEntries.length;
+      handleTimelineDrop(insertIndex);
+    };
+
+    const onTouchCancel = () => {
+      setTimelineDragging(false);
+      setTimelineHoverSlot(null);
+    };
+
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd, { passive: false });
+    window.addEventListener("touchcancel", onTouchCancel);
+
+    return () => {
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchcancel", onTouchCancel);
+    };
+  }, [canSubmitTimeline, timelineDragging, timelineEntries.length, timelineHoverSlot]);
+
   const revealOpen = room.state.phase === "REVEAL" || room.state.lifecycle === "finished";
   const intermissionOpen = room.state.phase === "INTERMISSION";
   const trackCorrect = currentSubmission?.trackId === room.round.trackId;
   const artistCorrect = currentSubmission?.artistId === room.round.artistId;
   const guessPending = room.state.phase === "LISTEN" && !currentSubmission;
   const timelinePending = room.state.phase === "LISTEN" && Boolean(currentSubmission) && !currentTimelineSubmission;
+  const timelinePlaced = room.state.phase === "LISTEN" && Boolean(currentSubmission) && Boolean(currentTimelineSubmission);
   const displayedTrackQuery = intermissionOpen ? "" : trackQuery;
   const displayedArtistQuery = intermissionOpen ? "" : artistQuery;
   const playerBreakdown =
@@ -229,6 +272,13 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       ? room.state.roundBreakdowns[room.round.id]!.players[playerSession.id]
       : undefined;
   const currentScore = playerSession ? room.state.scores[playerSession.id] ?? 0 : 0;
+  const timelinePreviewIndex =
+    timelineDragging && canSubmitTimeline ? (timelineHoverSlot ?? timelineEntries.length) : null;
+  const lockedTimelineInsertIndex =
+    room.state.phase === "LISTEN" && currentTimelineSubmission
+      ? clampTimelineInsertIndex(currentTimelineSubmission.insertIndex, timelineEntries.length)
+      : null;
+  const timelineDisplayInsertIndex = timelinePreviewIndex ?? lockedTimelineInsertIndex;
 
   return (
     <main className="jam-page">
@@ -411,7 +461,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               {guessPending ? <Badge variant="warning">Waiting for your guess</Badge> : null}
               {currentSubmission ? <Badge variant="success">Guess locked</Badge> : null}
               {timelinePending ? <Badge variant="warning">Place the timeline</Badge> : null}
-              {currentTimelineSubmission ? <Badge variant="success">Timeline locked</Badge> : null}
+              {timelinePlaced ? <Badge variant="success">Timeline position saved</Badge> : null}
               {!playerSession && canEditGuess ? (
                 <Badge variant="warning">Join with player name to submit</Badge>
               ) : null}
@@ -423,30 +473,144 @@ export default function PlayGame({ params }: Route.ComponentProps) {
             <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#f7fbff] p-3">
               <p className="text-sm font-bold text-[#223f94]">Timeline placement</p>
               <p className="text-xs font-semibold text-[#4d5d9f]">
-                {currentSubmission ? "Select where this round belongs." : "Lock your guess to unlock timeline placement."}
+                {currentSubmission
+                  ? "Drag the release year between items. You can keep moving it until the timer ends."
+                  : "Lock your guess to unlock timeline placement."}
               </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {timelineRounds.length === 0 ? (
-                  <Badge variant="default">No revealed tracks yet</Badge>
-                ) : (
-                  timelineRounds.map((timelineRound) => (
-                    <Badge key={timelineRound.id} variant="default">
-                      {timelineRound.year} - {timelineRound.title}
-                    </Badge>
-                  ))
-                )}
+              <div className="mt-3 rounded-xl border-2 border-dashed border-[#6a7ec2] bg-white px-3 py-2">
+                <div
+                  draggable={canSubmitTimeline}
+                  onDragStart={() => {
+                    setTimelineDragging(true);
+                    setTimelineHoverSlot(
+                      lockedTimelineInsertIndex ?? timelineEntries.length,
+                    );
+                  }}
+                  onDragEnd={() => {
+                    setTimelineDragging(false);
+                    setTimelineHoverSlot(null);
+                  }}
+                  onTouchStart={(event) => {
+                    if (!canSubmitTimeline || event.touches.length === 0) {
+                      return;
+                    }
+
+                    event.preventDefault();
+                    setTimelineDragging(true);
+                    setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
+                  }}
+                  className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold text-[#223f94] ${
+                    canSubmitTimeline
+                      ? "cursor-grab border-[#2f4eb8] bg-[#eaf1ff]"
+                      : "border-[#c4d1f3] bg-[#f3f7ff] text-[#6a78b0]"
+                  }`}
+                >
+                  Release year
+                </div>
               </div>
-              <div className="mt-3 grid gap-2">
-                {timelineSlots.map((slot) => (
-                  <Button
-                    key={slot.slotIndex}
-                    variant={currentTimelineSubmission?.insertIndex === slot.slotIndex ? "success" : "outline"}
-                    onClick={() => submitTimeline(slot.slotIndex)}
-                    disabled={!canSubmitTimeline}
-                  >
-                    {slot.label}
-                  </Button>
+              <div
+                ref={timelineListRef}
+                className="mt-3 space-y-2"
+                onDragOver={(event) => {
+                  if (!canSubmitTimeline) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  if (event.currentTarget !== event.target) {
+                    return;
+                  }
+
+                  setTimelineHoverSlot(timelineEntries.length);
+                }}
+                onDrop={(event) => {
+                  if (!canSubmitTimeline) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  handleTimelineDrop(timelineHoverSlot ?? timelineEntries.length);
+                }}
+              >
+                {timelineEntries.map((entry, index) => (
+                  <div key={entry.id} className="space-y-2">
+                    {timelineDisplayInsertIndex === index ? (
+                      <div
+                        draggable={canSubmitTimeline && !timelineDragging}
+                        onDragStart={() => {
+                          if (!canSubmitTimeline) {
+                            return;
+                          }
+                          setTimelineDragging(true);
+                          setTimelineHoverSlot(index);
+                        }}
+                        onDragEnd={() => {
+                          setTimelineDragging(false);
+                          setTimelineHoverSlot(null);
+                        }}
+                        onTouchStart={(event) => {
+                          if (!canSubmitTimeline || event.touches.length === 0) {
+                            return;
+                          }
+
+                          event.preventDefault();
+                          setTimelineDragging(true);
+                          setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
+                        }}
+                        className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold ${
+                          timelineDragging
+                            ? "border-dashed border-[#2f4eb8] bg-[#eaf1ff] text-[#223f94]"
+                            : canSubmitTimeline
+                              ? "cursor-grab border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                              : "border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                        }`}
+                      >
+                        Release year
+                      </div>
+                    ) : null}
+                    <div
+                      data-timeline-entry="true"
+                      onDragOver={(event) => handleTimelineItemDragOver(event, index)}
+                      className="rounded-lg border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2 text-sm font-extrabold text-[#223f94]"
+                    >
+                      {timelineEntryLabel(entry)}
+                    </div>
+                  </div>
                 ))}
+                {timelineDisplayInsertIndex === timelineEntries.length ? (
+                  <div
+                    draggable={canSubmitTimeline && !timelineDragging}
+                    onDragStart={() => {
+                      if (!canSubmitTimeline) {
+                        return;
+                      }
+                      setTimelineDragging(true);
+                      setTimelineHoverSlot(timelineEntries.length);
+                    }}
+                    onDragEnd={() => {
+                      setTimelineDragging(false);
+                      setTimelineHoverSlot(null);
+                    }}
+                    onTouchStart={(event) => {
+                      if (!canSubmitTimeline || event.touches.length === 0) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      setTimelineDragging(true);
+                      setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
+                    }}
+                    className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold ${
+                      timelineDragging
+                        ? "border-dashed border-[#2f4eb8] bg-[#eaf1ff] text-[#223f94]"
+                        : canSubmitTimeline
+                          ? "cursor-grab border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                          : "border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                    }`}
+                  >
+                    Release year
+                  </div>
+                ) : null}
               </div>
             </div>
 

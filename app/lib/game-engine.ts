@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { mockRounds } from "~/lib/mock-room";
+import { buildTimelineEntries, clampTimelineInsertIndex, isTimelineInsertCorrect } from "~/lib/timeline";
 
 export type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
 export type RoomLifecycle = "lobby" | "running" | "finished";
@@ -414,27 +415,13 @@ function timelineSubmissionKey(playerId: string, roundId: string) {
   return `${playerId}:${roundId}`;
 }
 
-function knownTimelineRounds(state: RoomState) {
-  return state.timelineRoundIds
-    .map((roundId) => mockRounds.find((round) => round.id === roundId))
-    .filter((round): round is (typeof mockRounds)[number] => Boolean(round))
-    .sort((a, b) => a.year - b.year || a.title.localeCompare(b.title));
-}
-
-function clampInsertIndex(insertIndex: number, max: number) {
-  if (!Number.isFinite(insertIndex)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(max, Math.floor(insertIndex)));
+function timelineEntriesForState(state: RoomState) {
+  return buildTimelineEntries(state.timelineRoundIds, mockRounds);
 }
 
 function isTimelinePlacementCorrect(state: RoomState, round: (typeof mockRounds)[number], insertIndex: number) {
-  const timeline = knownTimelineRounds(state);
-  const clamped = clampInsertIndex(insertIndex, timeline.length);
-  const leftYear = clamped > 0 ? timeline[clamped - 1]!.year : Number.NEGATIVE_INFINITY;
-  const rightYear = clamped < timeline.length ? timeline[clamped]!.year : Number.POSITIVE_INFINITY;
-  return round.year >= leftYear && round.year <= rightYear;
+  const entries = timelineEntriesForState(state);
+  return isTimelineInsertCorrect(entries, round.year, insertIndex);
 }
 
 function decayedPoints(
@@ -479,7 +466,9 @@ function resolveRoundIfNeeded(state: RoomState, at = nowMs()): RoomState {
     const trackCorrect = guess?.trackId === round.trackId;
     const artistCorrect = guess?.artistId === round.artistId;
     const timelineCorrect =
-      typeof timeline?.insertIndex === "number" ? isTimelinePlacementCorrect(state, round, timeline.insertIndex) : false;
+      typeof timeline?.insertIndex === "number"
+        ? isTimelinePlacementCorrect(state, round, timeline.insertIndex)
+        : false;
 
     const trackPoints = trackCorrect
       ? decayedPoints(scoringMaxPoints.track, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
@@ -488,7 +477,7 @@ function resolveRoundIfNeeded(state: RoomState, at = nowMs()): RoomState {
       ? decayedPoints(scoringMaxPoints.artist, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
       : 0;
     const timelinePoints = timelineCorrect
-      ? decayedPoints(scoringMaxPoints.timeline, timeline?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
+      ? decayedPoints(scoringMaxPoints.timeline, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
       : 0;
     const total = trackPoints + artistPoints + timelinePoints;
 
@@ -575,15 +564,20 @@ function submitTimelineInState(
   }
 
   const key = timelineSubmissionKey(playerId, roundId);
-  if (roomState.timelineSubmissions[key]) {
-    return roomState;
-  }
+  const guessKey = guessSubmissionKey(playerId, roundId);
 
   if (roomState.lifecycle === "running" && !roomState.allowedPlayerIds.includes(playerId)) {
     return roomState;
   }
 
-  const clampedInsertIndex = clampInsertIndex(submission.insertIndex, knownTimelineRounds(roomState).length + 1);
+  if (!roomState.guessSubmissions[guessKey]) {
+    return roomState;
+  }
+
+  const clampedInsertIndex = clampTimelineInsertIndex(
+    submission.insertIndex,
+    timelineEntriesForState(roomState).length,
+  );
 
   return {
     ...roomState,
@@ -593,7 +587,7 @@ function submitTimelineInState(
         playerId,
         roundId,
         insertIndex: clampedInsertIndex,
-        submittedAt: at,
+        submittedAt: roomState.timelineSubmissions[key]?.submittedAt ?? at,
       },
     },
     updatedAt: roomState.updatedAt,
