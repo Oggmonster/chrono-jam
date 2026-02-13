@@ -14,7 +14,7 @@ import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import { buildMockAutocompletePack } from "~/lib/mock-autocomplete";
 import { mockRounds } from "~/lib/mock-room";
 import { usePlayerPresence } from "~/lib/player-presence";
-import { getPlayerSession } from "~/lib/player-session";
+import { getPlayerSession, type PlayerSession } from "~/lib/player-session";
 import { buildTimelineEntries, clampTimelineInsertIndex, timelineEntryLabel } from "~/lib/timeline";
 
 export function meta({}: Route.MetaArgs) {
@@ -37,7 +37,7 @@ function phaseInstruction(phase: string) {
 export default function PlayGame({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const room = useRoomState(roomId, "player");
-  const playerSession = useMemo(() => getPlayerSession(roomId), [roomId]);
+  const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
   usePlayerPresence(playerSession, room.controls);
 
   const autocomplete = useMemo(() => buildMockAutocompletePack(), []);
@@ -110,6 +110,10 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     }
     return searchAutocomplete(autocomplete.artists, artistQuery, 8);
   }, [artistInputFocused, artistQuery, autocomplete.artists, canEditGuess, selectedArtist]);
+
+  useEffect(() => {
+    setPlayerSession(getPlayerSession(roomId));
+  }, [roomId]);
 
   useEffect(() => {
     setTrackQuery("");

@@ -28,6 +28,14 @@ export type TimelineSubmission = {
   submittedAt: number;
 };
 
+export type PreloadReadiness = {
+  playerId: string;
+  gamePackLoaded: boolean;
+  autocompleteLoaded: boolean;
+  gamePackHash: string;
+  updatedAt: number;
+};
+
 export type RoundPlayerBreakdown = {
   playerId: string;
   guessCorrect: {
@@ -61,6 +69,7 @@ export type RoomState = {
   allowedPlayerIds: string[];
   guessSubmissions: Record<string, GuessSubmission>;
   timelineSubmissions: Record<string, TimelineSubmission>;
+  preloadReadiness: Record<string, PreloadReadiness>;
   timelineRoundIds: string[];
   scores: Record<string, number>;
   roundBreakdowns: Record<string, RoundBreakdown>;
@@ -79,6 +88,13 @@ type RoomCommand =
   | {
       type: "submit_timeline";
       submission: Pick<TimelineSubmission, "playerId" | "roundId" | "insertIndex">;
+    }
+  | {
+      type: "update_preload";
+      readiness: Pick<
+        PreloadReadiness,
+        "playerId" | "gamePackLoaded" | "autocompleteLoaded" | "gamePackHash"
+      >;
     };
 
 type RoomHookResult = {
@@ -99,6 +115,12 @@ type RoomHookResult = {
     submitTimeline: (
       submission: Pick<TimelineSubmission, "playerId" | "roundId" | "insertIndex">,
     ) => void;
+    updatePreload: (
+      readiness: Pick<
+        PreloadReadiness,
+        "playerId" | "gamePackLoaded" | "autocompleteLoaded" | "gamePackHash"
+      >,
+    ) => void;
   };
 };
 
@@ -107,7 +129,7 @@ const participantColors = ["#4ec7e0", "#f28d35", "#e45395", "#7bcf4b", "#7d6cfc"
 const participantStaleMs = 20_000;
 
 const phaseDurationsMs: Record<GamePhase, number> = {
-  LISTEN: 28_000,
+  LISTEN: 45_000,
   REVEAL: 8_000,
   INTERMISSION: 5_000,
 };
@@ -185,6 +207,8 @@ function normalizeRoomState(state: RoomState): RoomState {
       state.guessSubmissions && typeof state.guessSubmissions === "object" ? state.guessSubmissions : {},
     timelineSubmissions:
       state.timelineSubmissions && typeof state.timelineSubmissions === "object" ? state.timelineSubmissions : {},
+    preloadReadiness:
+      state.preloadReadiness && typeof state.preloadReadiness === "object" ? state.preloadReadiness : {},
     timelineRoundIds: Array.isArray(state.timelineRoundIds) ? state.timelineRoundIds : [],
     scores: state.scores && typeof state.scores === "object" ? state.scores : {},
     roundBreakdowns:
@@ -210,6 +234,7 @@ function shouldApplyRemoteState(current: RoomState, incoming: RoomState) {
     incoming.allowedPlayerIds.join(",") !== current.allowedPlayerIds.join(",") ||
     Object.keys(incoming.guessSubmissions).length !== Object.keys(current.guessSubmissions).length ||
     Object.keys(incoming.timelineSubmissions).length !== Object.keys(current.timelineSubmissions).length ||
+    JSON.stringify(incoming.preloadReadiness) !== JSON.stringify(current.preloadReadiness) ||
     incoming.timelineRoundIds.join(",") !== current.timelineRoundIds.join(",") ||
     Object.keys(incoming.scores).length !== Object.keys(current.scores).length ||
     Object.keys(incoming.roundBreakdowns).length !== Object.keys(current.roundBreakdowns).length
@@ -233,6 +258,7 @@ export function createLobbyState(roomId: string, at = nowMs()): RoomState {
     allowedPlayerIds: [],
     guessSubmissions: {},
     timelineSubmissions: {},
+    preloadReadiness: {},
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},
@@ -264,6 +290,7 @@ export function startRoomGame(state: RoomState, at = nowMs()): RoomState {
     allowedPlayerIds: lockedPlayerIds,
     guessSubmissions: {},
     timelineSubmissions: {},
+    preloadReadiness: {},
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},
@@ -322,13 +349,26 @@ function pruneStaleParticipants(roomState: RoomState, at = nowMs()) {
   const nextParticipants = roomState.participants.filter(
     (participant) => at - participant.lastSeenAt <= participantStaleMs,
   );
-  if (nextParticipants.length === roomState.participants.length) {
+  const participantIds = new Set(nextParticipants.map((participant) => participant.id));
+  const nextPreloadReadinessEntries = Object.entries(roomState.preloadReadiness).filter(([playerId]) =>
+    participantIds.has(playerId),
+  );
+  const nextPreloadReadiness = Object.fromEntries(nextPreloadReadinessEntries) as Record<
+    string,
+    PreloadReadiness
+  >;
+
+  if (
+    nextParticipants.length === roomState.participants.length &&
+    nextPreloadReadinessEntries.length === Object.keys(roomState.preloadReadiness).length
+  ) {
     return roomState;
   }
 
   return {
     ...roomState,
     participants: nextParticipants,
+    preloadReadiness: nextPreloadReadiness,
     updatedAt: at,
   };
 }
@@ -589,6 +629,47 @@ function submitTimelineInState(
         insertIndex: clampedInsertIndex,
         submittedAt: roomState.timelineSubmissions[key]?.submittedAt ?? at,
       },
+    },
+    updatedAt: roomState.updatedAt,
+  };
+}
+
+function updatePreloadReadinessInState(
+  roomState: RoomState,
+  readiness: Pick<
+    PreloadReadiness,
+    "playerId" | "gamePackLoaded" | "autocompleteLoaded" | "gamePackHash"
+  >,
+  at = nowMs(),
+) {
+  const playerId = readiness.playerId.trim();
+  if (!playerId) {
+    return roomState;
+  }
+
+  const nextReadiness: PreloadReadiness = {
+    playerId,
+    gamePackLoaded: Boolean(readiness.gamePackLoaded),
+    autocompleteLoaded: Boolean(readiness.autocompleteLoaded),
+    gamePackHash: readiness.gamePackHash.trim(),
+    updatedAt: at,
+  };
+
+  const existing = roomState.preloadReadiness[playerId];
+  if (
+    existing &&
+    existing.gamePackLoaded === nextReadiness.gamePackLoaded &&
+    existing.autocompleteLoaded === nextReadiness.autocompleteLoaded &&
+    existing.gamePackHash === nextReadiness.gamePackHash
+  ) {
+    return roomState;
+  }
+
+  return {
+    ...roomState,
+    preloadReadiness: {
+      ...roomState.preloadReadiness,
+      [playerId]: nextReadiness,
     },
     updatedAt: roomState.updatedAt,
   };
@@ -857,6 +938,24 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
           }
           return nextState;
         });
+      },
+      updatePreload: (
+        readiness: Pick<
+          PreloadReadiness,
+          "playerId" | "gamePackLoaded" | "autocompleteLoaded" | "gamePackHash"
+        >,
+      ) => {
+        setState((prevState) => updatePreloadReadinessInState(prevState, readiness));
+        void postRoomCommand(roomId, {
+          type: "update_preload",
+          readiness,
+        })
+          .then((remote) => {
+            syncRemoteIfNewer(remote);
+          })
+          .catch(() => {
+            // Best-effort in local dev.
+          });
       },
     }),
     [role, roomId, sendStateToServer, syncRemoteIfNewer],

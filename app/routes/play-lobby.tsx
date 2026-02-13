@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 import type { Route } from "./+types/play-lobby";
 import { Link, useNavigate } from "react-router";
 
@@ -8,8 +8,9 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { phaseLabel, useRoomState } from "~/lib/game-engine";
+import { useLobbyPreload } from "~/lib/lobby-preload";
 import { usePlayerPresence } from "~/lib/player-presence";
-import { getPlayerSession } from "~/lib/player-session";
+import { getPlayerSession, type PlayerSession } from "~/lib/player-session";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Lobby" }];
@@ -20,8 +21,13 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
   const navigate = useNavigate();
   const room = useRoomState(roomId, "player");
   const running = room.state.lifecycle === "running";
-  const playerSession = useMemo(() => getPlayerSession(roomId), [roomId]);
+  const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
   usePlayerPresence(playerSession, room.controls);
+  const preload = useLobbyPreload(roomId, room.state.lifecycle === "lobby");
+
+  useEffect(() => {
+    setPlayerSession(getPlayerSession(roomId));
+  }, [roomId]);
 
   useEffect(() => {
     if (!running || !playerSession) {
@@ -30,6 +36,34 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
 
     navigate(`/play/game/${roomId}`, { replace: true });
   }, [navigate, playerSession, roomId, running]);
+
+  useEffect(() => {
+    if (!playerSession || room.state.lifecycle !== "lobby") {
+      return;
+    }
+
+    const publishReadiness = () => {
+      room.controls.updatePreload({
+        playerId: playerSession.id,
+        gamePackLoaded: preload.gamePackLoaded,
+        autocompleteLoaded: preload.autocompleteLoaded,
+        gamePackHash: preload.gamePackHash,
+      });
+    };
+
+    publishReadiness();
+    const interval = window.setInterval(publishReadiness, 3_000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [
+    playerSession,
+    preload.autocompleteLoaded,
+    preload.gamePackHash,
+    preload.gamePackLoaded,
+    room.controls,
+    room.state.lifecycle,
+  ]);
 
   return (
     <main className="jam-page">
@@ -60,6 +94,36 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
             {room.state.participants.length === 0 ? (
               <p className="text-center text-sm font-semibold text-[#51449e]">No players joined yet.</p>
             ) : null}
+          </CardContent>
+        </Card>
+
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Your Preload Status</CardTitle>
+            <CardDescription>Ready state is synced to the host lobby in real time.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#1f1f55]">
+              <Badge variant={preload.gamePackLoaded ? "success" : "warning"}>
+                {preload.gamePackLoaded ? "OK" : "..."}
+              </Badge>
+              Game pack loaded
+            </p>
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#1f1f55]">
+              <Badge variant={preload.autocompleteLoaded ? "success" : "warning"}>
+                {preload.autocompleteLoaded ? "OK" : "..."}
+              </Badge>
+              Autocomplete ready
+            </p>
+            <p className="text-xs font-semibold text-[#4f5fa2]">
+              Source: {preload.gamePackSource === "none" ? "-" : preload.gamePackSource}
+              {preload.gamePackHash ? ` | hash ${preload.gamePackHash.slice(0, 8)}` : ""}
+            </p>
+            {preload.error ? <p className="text-xs font-semibold text-[#8d2e2a]">{preload.error}</p> : null}
+            {!preload.error && !preload.ready ? (
+              <p className="text-xs font-semibold text-[#6b3f9b]">Preparing lobby assets...</p>
+            ) : null}
+            {preload.ready ? <Badge variant="success">Ready</Badge> : null}
           </CardContent>
         </Card>
 

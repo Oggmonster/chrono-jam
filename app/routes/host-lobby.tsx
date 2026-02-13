@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import type { Route } from "./+types/host-lobby";
 import { Link, useNavigate } from "react-router";
 
@@ -8,7 +8,6 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { useRoomState } from "~/lib/game-engine";
-import { preloadChecks } from "~/lib/mock-room";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Lobby" }];
@@ -18,6 +17,25 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const navigate = useNavigate();
   const room = useRoomState(roomId, "host");
+  const readinessRows = useMemo(
+    () =>
+      room.state.participants.map((player) => {
+        const readiness = room.state.preloadReadiness[player.id];
+        const ready =
+          Boolean(readiness?.gamePackLoaded) &&
+          Boolean(readiness?.autocompleteLoaded);
+
+        return {
+          player,
+          readiness,
+          ready,
+        };
+      }),
+    [room.state.participants, room.state.preloadReadiness],
+  );
+  const readyCount = readinessRows.filter((entry) => entry.ready).length;
+  const allReady = readinessRows.length > 0 && readyCount === readinessRows.length;
+  const canStartNormally = room.state.participants.length === 0 || allReady;
 
   useEffect(() => {
     if (room.state.lifecycle !== "running") {
@@ -61,27 +79,57 @@ export default function HostLobby({ params }: Route.ComponentProps) {
           <Card>
             <CardHeader>
               <CardTitle>Preload Checks</CardTitle>
-              <CardDescription>Static for now, will become live readiness in Step 6.</CardDescription>
+              <CardDescription>Live readiness from connected player lobbies.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {preloadChecks.map((item) => (
-                <p key={item} className="flex items-center gap-2 text-sm font-bold text-[#1f1f55]">
-                  <Badge variant="success">OK</Badge>
-                  {item}
-                </p>
+              <p className="text-sm font-semibold text-[#1f1f55]">
+                Ready players: {readyCount}/{readinessRows.length}
+              </p>
+              {readinessRows.map((entry) => (
+                <div
+                  key={entry.player.id}
+                  className="rounded-xl border-2 border-[#2f4eb8] bg-[#eef4ff] px-3 py-2 text-xs font-semibold text-[#1f1f55]"
+                >
+                  <p className="mb-1 font-bold text-[#223f94]">{entry.player.name}</p>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant={entry.readiness?.gamePackLoaded ? "success" : "warning"}>Pack</Badge>
+                    <Badge variant={entry.readiness?.autocompleteLoaded ? "success" : "warning"}>Autocomplete</Badge>
+                    <Badge variant={entry.ready ? "success" : "warning"}>
+                      {entry.ready ? "Ready" : "Loading"}
+                    </Badge>
+                  </div>
+                  {entry.readiness?.gamePackHash ? (
+                    <p className="mt-1 text-[11px] font-semibold text-[#5f6da6]">
+                      hash {entry.readiness.gamePackHash.slice(0, 8)}
+                    </p>
+                  ) : null}
+                </div>
               ))}
+              {readinessRows.length === 0 ? (
+                <p className="text-center text-sm font-semibold text-[#51449e]">Waiting for players to join.</p>
+              ) : null}
             </CardContent>
           </Card>
         </div>
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Button variant="success" size="lg" onClick={room.controls.startGame}>
+          <Button variant="success" size="lg" onClick={room.controls.startGame} disabled={!canStartNormally}>
             Start Game
           </Button>
+          {!canStartNormally ? (
+            <Button variant="outline" onClick={room.controls.startGame}>
+              Force Start
+            </Button>
+          ) : null}
           <Button variant="outline" onClick={room.controls.resetLobby}>
             Reset Room
           </Button>
         </div>
+        {!canStartNormally ? (
+          <p className="mt-2 text-center text-xs font-semibold text-[#8d2e2a]">
+            Waiting for preload completion. Use Force Start to override.
+          </p>
+        ) : null}
 
         {room.state.lifecycle === "running" ? (
           <p className="mt-3 text-center text-sm font-semibold text-[#2e2e79]">

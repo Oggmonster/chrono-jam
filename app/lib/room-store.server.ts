@@ -27,6 +27,14 @@ type StoredTimelineSubmission = {
   submittedAt: number;
 };
 
+type StoredPreloadReadiness = {
+  playerId: string;
+  gamePackLoaded: boolean;
+  autocompleteLoaded: boolean;
+  gamePackHash: string;
+  updatedAt: number;
+};
+
 type StoredRoundPlayerBreakdown = {
   playerId: string;
   guessCorrect: {
@@ -60,6 +68,7 @@ export type StoredRoomState = {
   allowedPlayerIds: string[];
   guessSubmissions: Record<string, StoredGuessSubmission>;
   timelineSubmissions: Record<string, StoredTimelineSubmission>;
+  preloadReadiness: Record<string, StoredPreloadReadiness>;
   timelineRoundIds: string[];
   scores: Record<string, number>;
   roundBreakdowns: Record<string, StoredRoundBreakdown>;
@@ -146,6 +155,7 @@ export function createStoredRoomState(roomId: string, at = nowMs()): StoredRoomS
     allowedPlayerIds: [],
     guessSubmissions: {},
     timelineSubmissions: {},
+    preloadReadiness: {},
     timelineRoundIds: [],
     scores: {},
     roundBreakdowns: {},
@@ -229,6 +239,28 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
           roundId: value.roundId,
           insertIndex: value.insertIndex,
           submittedAt: value.submittedAt,
+        };
+      }
+    }
+  }
+
+  const preloadReadinessEntries = state.preloadReadiness;
+  const preloadReadiness: Record<string, StoredPreloadReadiness> = {};
+  if (preloadReadinessEntries && typeof preloadReadinessEntries === "object") {
+    for (const [key, value] of Object.entries(preloadReadinessEntries)) {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        typeof value.playerId === "string" &&
+        typeof value.gamePackLoaded === "boolean" &&
+        typeof value.autocompleteLoaded === "boolean"
+      ) {
+        preloadReadiness[key] = {
+          playerId: value.playerId,
+          gamePackLoaded: value.gamePackLoaded,
+          autocompleteLoaded: value.autocompleteLoaded,
+          gamePackHash: typeof value.gamePackHash === "string" ? value.gamePackHash : "",
+          updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : at,
         };
       }
     }
@@ -320,6 +352,7 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
     allowedPlayerIds,
     guessSubmissions,
     timelineSubmissions,
+    preloadReadiness,
     timelineRoundIds,
     scores,
     roundBreakdowns,
@@ -330,13 +363,26 @@ function pruneStaleParticipants(roomState: StoredRoomState, at = nowMs()): Store
   const nextParticipants = roomState.participants.filter(
     (participant) => at - participant.lastSeenAt <= participantStaleMs,
   );
-  if (nextParticipants.length === roomState.participants.length) {
+  const participantIds = new Set(nextParticipants.map((participant) => participant.id));
+  const nextPreloadReadinessEntries = Object.entries(roomState.preloadReadiness).filter(([playerId]) =>
+    participantIds.has(playerId),
+  );
+  const nextPreloadReadiness = Object.fromEntries(nextPreloadReadinessEntries) as Record<
+    string,
+    StoredPreloadReadiness
+  >;
+
+  if (
+    nextParticipants.length === roomState.participants.length &&
+    nextPreloadReadinessEntries.length === Object.keys(roomState.preloadReadiness).length
+  ) {
     return roomState;
   }
 
   return {
     ...roomState,
     participants: nextParticipants,
+    preloadReadiness: nextPreloadReadiness,
     updatedAt: at,
   };
 }
@@ -364,6 +410,15 @@ function ensureRoomState(roomId: string, options: { notifyOnPrune?: boolean } = 
     const patched = {
       ...existing,
       timelineSubmissions: {},
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  if (!existing.preloadReadiness || typeof existing.preloadReadiness !== "object") {
+    const patched = {
+      ...existing,
+      preloadReadiness: {},
       updatedAt: nowMs(),
     };
     return setStoredRoomState(roomId, patched, { notify: false });
@@ -591,6 +646,53 @@ export function upsertTimelineSubmission(
         ),
         submittedAt: base.timelineSubmissions[key]?.submittedAt ?? nowMs(),
       },
+    },
+    updatedAt: nowMs(),
+  };
+
+  return setStoredRoomState(roomId, nextState);
+}
+
+export function upsertPreloadReadiness(
+  roomId: string,
+  readiness: Pick<
+    StoredPreloadReadiness,
+    "playerId" | "gamePackLoaded" | "autocompleteLoaded" | "gamePackHash"
+  >,
+): StoredRoomState {
+  const base = ensureRoomState(roomId, { notifyOnPrune: false });
+  const playerId = readiness.playerId.trim();
+  if (!playerId) {
+    return base;
+  }
+
+  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(playerId)) {
+    return base;
+  }
+
+  const nextReadiness: StoredPreloadReadiness = {
+    playerId,
+    gamePackLoaded: Boolean(readiness.gamePackLoaded),
+    autocompleteLoaded: Boolean(readiness.autocompleteLoaded),
+    gamePackHash: readiness.gamePackHash.trim(),
+    updatedAt: nowMs(),
+  };
+
+  const existing = base.preloadReadiness[playerId];
+  if (
+    existing &&
+    existing.gamePackLoaded === nextReadiness.gamePackLoaded &&
+    existing.autocompleteLoaded === nextReadiness.autocompleteLoaded &&
+    existing.gamePackHash === nextReadiness.gamePackHash
+  ) {
+    return base;
+  }
+
+  const nextState = {
+    ...base,
+    preloadReadiness: {
+      ...base.preloadReadiness,
+      [playerId]: nextReadiness,
     },
     updatedAt: nowMs(),
   };

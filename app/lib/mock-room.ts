@@ -65,7 +65,6 @@ export const mockRounds: MockRound[] = [
 export const preloadChecks = [
   "Game pack loaded",
   "Autocomplete loaded",
-  "Audio buffer ready",
 ];
 
 export const leaderboard = [

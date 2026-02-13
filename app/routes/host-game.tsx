@@ -28,8 +28,11 @@ export default function HostGame({ params }: Route.ComponentProps) {
 
   const [token, setToken] = useState("");
   const [tokenStatus, setTokenStatus] = useState("");
+  const [interactionUnlocked, setInteractionUnlocked] = useState(false);
   const spotify = useSpotifyHostPlayer(token);
   const autoPlayedRef = useRef<string>("");
+  const autoInitTokenRef = useRef<string>("");
+  const interactionUnlockedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -77,6 +80,44 @@ export default function HostGame({ params }: Route.ComponentProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const trimmedToken = token.trim();
+    if (!trimmedToken) {
+      return;
+    }
+
+    if (spotify.connected) {
+      return;
+    }
+
+    if (autoInitTokenRef.current === trimmedToken) {
+      return;
+    }
+
+    autoInitTokenRef.current = trimmedToken;
+    void spotify.initialize();
+  }, [spotify.connected, spotify.initialize, token]);
+
+  useEffect(() => {
+    const unlockFromInteraction = () => {
+      if (interactionUnlockedRef.current) {
+        return;
+      }
+
+      interactionUnlockedRef.current = true;
+      setInteractionUnlocked(true);
+      void spotify.initialize();
+    };
+
+    window.addEventListener("pointerdown", unlockFromInteraction, { passive: true });
+    window.addEventListener("keydown", unlockFromInteraction);
+
+    return () => {
+      window.removeEventListener("pointerdown", unlockFromInteraction);
+      window.removeEventListener("keydown", unlockFromInteraction);
+    };
+  }, [spotify.initialize]);
+
   const progress = useMemo(() => {
     if (room.state.lifecycle !== "running") {
       return 0;
@@ -92,17 +133,42 @@ export default function HostGame({ params }: Route.ComponentProps) {
   }, [room.remainingMs, room.state.lifecycle, room.state.phase]);
 
   useEffect(() => {
-    if (room.state.lifecycle !== "running" || room.state.phase !== "LISTEN" || !spotify.connected) {
+    if (room.state.lifecycle !== "running" || room.state.phase !== "LISTEN") {
       return;
     }
 
     const autoplayKey = `${room.round.id}:${room.state.phaseStartedAt}`;
-    if (autoPlayedRef.current === autoplayKey) {
-      return;
-    }
+    let disposed = false;
 
-    autoPlayedRef.current = autoplayKey;
-    void spotify.playTrack(room.round.spotifyUri, room.round.startMs);
+    const attemptPlay = async () => {
+      if (disposed) {
+        return;
+      }
+
+      if (autoPlayedRef.current === autoplayKey) {
+        return;
+      }
+
+      if (!spotify.connected || !spotify.ready) {
+        await spotify.initialize();
+        return;
+      }
+
+      const played = await spotify.playTrack(room.round.spotifyUri, room.round.startMs);
+      if (played) {
+        autoPlayedRef.current = autoplayKey;
+      }
+    };
+
+    void attemptPlay();
+    const retryTimer = window.setInterval(() => {
+      void attemptPlay();
+    }, 1500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(retryTimer);
+    };
   }, [
     room.round.id,
     room.round.spotifyUri,
@@ -112,6 +178,18 @@ export default function HostGame({ params }: Route.ComponentProps) {
     room.state.phaseStartedAt,
     spotify,
   ]);
+
+  useEffect(() => {
+    if (room.state.lifecycle === "running" && room.state.phase !== "INTERMISSION") {
+      return;
+    }
+
+    if (!spotify.connected) {
+      return;
+    }
+
+    void spotify.pause();
+  }, [room.state.lifecycle, room.state.phase, spotify]);
 
   const saveToken = () => {
     if (typeof window === "undefined") {
@@ -169,10 +247,20 @@ export default function HostGame({ params }: Route.ComponentProps) {
               <span>{room.state.lifecycle === "running" ? `${remainingSeconds}s` : "idle"}</span>
             </div>
             <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]">
-              <p className="font-[var(--font-display)] text-2xl text-[#243a84]">{room.round.title}</p>
-              <p className="font-bold">{room.round.artist}</p>
-              <p className="text-sm">Year: {room.round.year}</p>
-              <p className="mt-2 text-xs font-semibold text-[#3e4f91]">{room.round.spotifyUri}</p>
+              {room.state.lifecycle === "running" && room.state.phase === "LISTEN" ? (
+                <>
+                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Now Listening...</p>
+                  <p className="font-bold">Song details hidden for fairness</p>
+                  <p className="text-sm">Host playback should start automatically.</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">{room.round.title}</p>
+                  <p className="font-bold">{room.round.artist}</p>
+                  <p className="text-sm">Year: {room.round.year}</p>
+                  <p className="mt-2 text-xs font-semibold text-[#3e4f91]">{room.round.spotifyUri}</p>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -242,6 +330,9 @@ export default function HostGame({ params }: Route.ComponentProps) {
                 <p>Connected: {spotify.connected ? "yes" : "no"}</p>
                 <p>Ready: {spotify.ready ? "yes" : "no"}</p>
                 <p>Device ID: {spotify.deviceId ?? "-"}</p>
+                {!interactionUnlocked ? (
+                  <p>Tap/click once on this page to unlock browser audio.</p>
+                ) : null}
                 {tokenStatus ? <p>{tokenStatus}</p> : null}
                 {spotify.error ? <p className="text-[#b43d2b]">{spotify.error}</p> : null}
               </div>

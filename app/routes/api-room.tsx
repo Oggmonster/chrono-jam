@@ -3,6 +3,7 @@ import {
   getRoomState,
   removeParticipant,
   replaceRoomState,
+  upsertPreloadReadiness,
   upsertGuessSubmission,
   upsertTimelineSubmission,
   upsertParticipant,
@@ -19,6 +20,15 @@ type RoomCommand =
   | {
       type: "submit_timeline";
       submission: { playerId: string; roundId: string; insertIndex: number };
+    }
+  | {
+      type: "update_preload";
+      readiness: {
+        playerId: string;
+        gamePackLoaded: boolean;
+        autocompleteLoaded: boolean;
+        gamePackHash: string;
+      };
     };
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -86,6 +96,19 @@ export async function action({ request, params }: Route.ActionArgs) {
         return new Response("Invalid timeline submission payload", { status: 400 });
       }
       return Response.json(upsertTimelineSubmission(roomId, submission));
+    }
+    case "update_preload": {
+      const readiness = command.readiness;
+      if (
+        !readiness ||
+        typeof readiness.playerId !== "string" ||
+        typeof readiness.gamePackLoaded !== "boolean" ||
+        typeof readiness.autocompleteLoaded !== "boolean" ||
+        typeof readiness.gamePackHash !== "string"
+      ) {
+        return new Response("Invalid preload readiness payload", { status: 400 });
+      }
+      return Response.json(upsertPreloadReadiness(roomId, readiness));
     }
     default:
       return new Response("Unsupported command", { status: 400 });

@@ -24,7 +24,7 @@ export function meta({}: Route.MetaArgs) {
 export default function HostSetup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [roomCode, setRoomCode] = useState(generateRoomCode());
+  const [roomCode, setRoomCode] = useState("");
   const [token, setToken] = useState("");
   const [statusText, setStatusText] = useState("");
 
@@ -59,11 +59,8 @@ export default function HostSetup() {
     const oauthToken = searchParams.get("spotify_access_token");
     const oauthExpiry = searchParams.get("spotify_expires_in");
     const oauthError = searchParams.get("spotify_error");
-    const oauthRoom = searchParams.get("room");
-
-    if (oauthRoom) {
-      setRoomCode(oauthRoom);
-    }
+    const oauthRoom = normalizeRoomCode(searchParams.get("room") ?? "");
+    setRoomCode((current) => current || oauthRoom || generateRoomCode());
 
     if (oauthError) {
       setStatusText(`Spotify auth error: ${oauthError}`);

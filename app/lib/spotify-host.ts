@@ -18,6 +18,7 @@ type SpotifyPlayer = {
   disconnect: () => void;
   addListener: (event: string, callback: (payload: any) => void) => void;
   removeListener: (event: string, callback?: (payload: any) => void) => void;
+  activateElement?: () => Promise<void> | void;
 };
 
 type SpotifyStatus = {
@@ -28,8 +29,8 @@ type SpotifyStatus = {
 };
 
 type SpotifyControls = {
-  initialize: () => Promise<void>;
-  playTrack: (trackUri: string, startMs?: number) => Promise<void>;
+  initialize: () => Promise<boolean>;
+  playTrack: (trackUri: string, startMs?: number) => Promise<boolean>;
   pause: () => Promise<void>;
   disconnect: () => void;
 };
@@ -71,6 +72,7 @@ function loadSpotifySdk(): Promise<void> {
 export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
   const playerRef = useRef<SpotifyPlayer | null>(null);
   const tokenRef = useRef(accessToken);
+  const activatingDeviceRef = useRef<string | null>(null);
 
   const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -81,10 +83,16 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
     tokenRef.current = accessToken;
   }, [accessToken]);
 
+  useEffect(() => {
+    void loadSpotifySdk().catch(() => {
+      // SDK can still be retried on initialize.
+    });
+  }, []);
+
   const initialize = useCallback(async () => {
     if (!accessToken) {
       setError("Missing Spotify access token. Add it in host setup first.");
-      return;
+      return false;
     }
 
     setError(null);
@@ -93,7 +101,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
 
     if (!window.Spotify) {
       setError("Spotify SDK did not initialize.");
-      return;
+      return false;
     }
 
     if (!playerRef.current) {
@@ -131,20 +139,69 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
       playerRef.current = player;
     }
 
+    if (typeof playerRef.current.activateElement === "function") {
+      try {
+        await playerRef.current.activateElement();
+      } catch {
+        // Non-fatal; some environments do not support explicit activation.
+      }
+    }
+
     const ok = await playerRef.current.connect();
     setConnected(ok);
 
     if (!ok) {
       setError("Could not connect Spotify player.");
+      return false;
     }
+
+    return true;
   }, [accessToken]);
+
+  const activateDevice = useCallback(async (targetDeviceId: string) => {
+    if (!tokenRef.current || !targetDeviceId) {
+      return;
+    }
+
+    if (activatingDeviceRef.current === targetDeviceId) {
+      return;
+    }
+
+    activatingDeviceRef.current = targetDeviceId;
+    const response = await fetch("https://api.spotify.com/v1/me/player", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${tokenRef.current}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        device_ids: [targetDeviceId],
+        play: false,
+      }),
+    });
+
+    if (!response.ok) {
+      activatingDeviceRef.current = null;
+      setError(`Spotify device activate failed (${response.status}).`);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!connected || !deviceId) {
+      return;
+    }
+
+    void activateDevice(deviceId);
+  }, [activateDevice, connected, deviceId]);
 
   const playTrack = useCallback(
     async (trackUri: string, startMs = 0) => {
       if (!tokenRef.current || !deviceId) {
         setError("Connect Spotify player before trying playback.");
-        return;
+        return false;
       }
+
+      await activateDevice(deviceId);
 
       const response = await fetch(
         `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
@@ -162,10 +219,26 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
       );
 
       if (!response.ok) {
-        setError(`Spotify play failed (${response.status}). Ensure scopes include streaming and user-modify-playback-state.`);
+        let errorDetail = "";
+        try {
+          const payload = (await response.json()) as { error?: { message?: string } };
+          if (payload?.error?.message) {
+            errorDetail = ` ${payload.error.message}`;
+          }
+        } catch {
+          // Ignore parse failures.
+        }
+
+        setError(
+          `Spotify play failed (${response.status}). Ensure scopes include streaming and user-modify-playback-state.${errorDetail}`,
+        );
+        return false;
       }
+
+      setError(null);
+      return true;
     },
-    [deviceId],
+    [activateDevice, deviceId],
   );
 
   const pause = useCallback(async () => {
