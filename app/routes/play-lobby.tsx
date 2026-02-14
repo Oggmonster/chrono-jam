@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Route } from "./+types/play-lobby";
 import { Link, useNavigate } from "react-router";
+import { ArrowLeftRight, CheckCircle2, Loader2 } from "lucide-react";
 
-import { PlayerChip } from "~/components/player-chip";
-import { Ribbon } from "~/components/ribbon";
+import { CatMascot, Equalizer, GameCard, GameLayout, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { phaseLabel, useRoomState } from "~/lib/game-engine";
 import { useLobbyPreload } from "~/lib/lobby-preload";
 import { usePlayerPresence } from "~/lib/player-presence";
@@ -22,12 +21,22 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
   const room = useRoomState(roomId, "player");
   const running = room.state.lifecycle === "running";
   const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
+  const [dots, setDots] = useState("");
   usePlayerPresence(playerSession, room.controls);
   const preload = useLobbyPreload(roomId, room.state.lifecycle === "lobby", room.state.playlistIds);
 
   useEffect(() => {
     setPlayerSession(getPlayerSession(roomId));
   }, [roomId]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setDots((prev) => (prev.length >= 3 ? "" : prev + "."));
+    }, 600);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (!running || !playerSession) {
@@ -66,91 +75,110 @@ export default function PlayLobby({ params }: Route.ComponentProps) {
   ]);
 
   return (
-    <main className="jam-page">
-      <section className="jam-stage w-full max-w-3xl">
-        <Ribbon tone="cool">Player Lobby</Ribbon>
+    <GameLayout className="mx-auto max-w-md">
+      <div className="animate-slide-up flex flex-col items-center gap-6">
+        <CatMascot variant="chill" size="md" className="animate-float" />
 
-        <p className="mt-4 text-center text-xl font-bold text-[#2e2e79]">
-          Room Code: <span className="text-[#d84837]">{roomId}</span>
-        </p>
-
-        <div className="mt-4 flex justify-center">
-          <Badge variant={running ? "success" : "default"}>
-            {running ? `LIVE: ${phaseLabel(room.state.phase)}` : "Waiting for host"}
-          </Badge>
+        <div className="flex flex-col items-center gap-3">
+          <Badge variant="info">Player</Badge>
+          <GameTitle className="text-2xl md:text-3xl">{running ? `Live: ${phaseLabel(room.state.phase)}` : `Waiting for host${dots}`}</GameTitle>
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span>
+              Room <span className="font-mono text-lg font-bold text-[hsl(var(--primary))]">{roomId}</span>
+            </span>
+            <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+            <span>{room.state.playlistIds.join(", ")}</span>
+            <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+            <span>{room.state.gameSongCount} songs</span>
+          </div>
         </div>
-        <p className="mt-2 text-center text-xs font-semibold text-[#4f5fa2]">
-          Playlists: {room.state.playlistIds.join(", ")}
-        </p>
-        <p className="mt-1 text-center text-xs font-semibold text-[#4f5fa2]">
-          Songs in game: {room.state.gameSongCount}
-        </p>
 
-        <Card className="mt-5">
-          <CardHeader>
-            <CardTitle>Players Connected</CardTitle>
-            <CardDescription>Host and players are now split into separate route flows.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-wrap justify-center gap-2">
-              {room.state.participants.map((player) => (
-                <PlayerChip key={player.id} player={player} />
-              ))}
-            </ul>
+        <GameCard className="w-full p-5">
+          <h3 className="mb-3 font-bold text-card-foreground">Players Connected</h3>
+          <div className="stagger-children flex flex-wrap gap-2">
+            {room.state.participants.map((player) => {
+              const readiness = room.state.preloadReadiness[player.id];
+              const ready = Boolean(readiness?.gamePackLoaded) && Boolean(readiness?.autocompleteLoaded);
+              return (
+                <div
+                  key={player.id}
+                  className={`flex items-center gap-2 rounded-full border px-3 py-2 ${
+                    ready ? "border-[hsl(155_65%_40%/0.25)] bg-[hsl(155_65%_40%/0.08)]" : "border-border bg-muted/40"
+                  }`}
+                >
+                  <div
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                    style={{ backgroundColor: player.color }}
+                  >
+                    {player.name.charAt(0)}
+                  </div>
+                  <span className="text-sm font-semibold text-card-foreground">{player.name}</span>
+                  {ready ? (
+                    <CheckCircle2 className="h-4 w-4 text-[hsl(155_65%_40%)]" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+              );
+            })}
             {room.state.participants.length === 0 ? (
-              <p className="text-center text-sm font-semibold text-[#51449e]">No players joined yet.</p>
+              <p className="text-sm text-muted-foreground">Waiting for players to join.</p>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </GameCard>
 
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle>Your Preload Status</CardTitle>
-            <CardDescription>Ready state is synced to the host lobby in real time.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="flex items-center gap-2 text-sm font-semibold text-[#1f1f55]">
-              <Badge variant={preload.gamePackLoaded ? "success" : "warning"}>
-                {preload.gamePackLoaded ? "OK" : "..."}
-              </Badge>
-              Game pack loaded
-            </p>
-            <p className="flex items-center gap-2 text-sm font-semibold text-[#1f1f55]">
-              <Badge variant={preload.autocompleteLoaded ? "success" : "warning"}>
-                {preload.autocompleteLoaded ? "OK" : "..."}
-              </Badge>
-              Autocomplete ready
-            </p>
-            <p className="text-xs font-semibold text-[#4f5fa2]">
-              Source: {preload.gamePackSource === "none" ? "-" : preload.gamePackSource}
-              {preload.gamePackHash ? ` | hash ${preload.gamePackHash.slice(0, 8)}` : ""}
-            </p>
-            {preload.error ? <p className="text-xs font-semibold text-[#8d2e2a]">{preload.error}</p> : null}
-            {!preload.error && !preload.ready ? (
-              <p className="text-xs font-semibold text-[#6b3f9b]">Preparing lobby assets...</p>
-            ) : null}
-            {preload.ready ? <Badge variant="success">Ready</Badge> : null}
-          </CardContent>
-        </Card>
+        <GameCard className="w-full p-5">
+          <h3 className="mb-3 font-bold text-card-foreground">Your Status</h3>
+          <div className="flex flex-col gap-2">
+            <ReadyItem label="Game pack loaded" ready={preload.gamePackLoaded} />
+            <ReadyItem label="Autocomplete ready" ready={preload.autocompleteLoaded} />
+          </div>
+          <div className="mt-4">
+            <Badge variant={preload.ready ? "success" : "warning"}>{preload.ready ? "Ready" : "Preparing..."}</Badge>
+          </div>
+          {preload.error ? <p className="mt-2 text-xs text-[hsl(var(--destructive))]">{preload.error}</p> : null}
+        </GameCard>
 
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Button asChild variant="secondary">
-            <Link to="/play/join">Change Room</Link>
+        <div className="flex flex-col items-center gap-2 py-1">
+          <Equalizer />
+          <p className="text-xs text-muted-foreground">The host will start the game soon</p>
+        </div>
+
+        <div className="flex flex-wrap justify-center gap-3">
+          <Button asChild variant="outline">
+            <Link to="/play/join">
+              <ArrowLeftRight className="h-4 w-4" />
+              Change Room
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/">Home</Link>
           </Button>
         </div>
-        {running && playerSession ? (
-          <p className="mt-3 text-center text-sm font-semibold text-[#2e2e79]">
-            Game is live. You are auto-redirected to your round screen.
-          </p>
-        ) : null}
+
         {!playerSession ? (
-          <p className="mt-3 text-center text-sm font-semibold text-[#8d2e2a]">
+          <p className="text-center text-sm font-semibold text-[hsl(var(--destructive))]">
             {running
               ? "This game is already running on this device session. Rejoin using the same player profile."
               : "Join with a player name first to participate."}
           </p>
         ) : null}
-      </section>
-    </main>
+      </div>
+    </GameLayout>
+  );
+}
+
+function ReadyItem({ label, ready }: { label: string; ready: boolean }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg p-2">
+      <div
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+          ready ? "bg-[hsl(155_65%_40%/0.15)] text-[hsl(155_65%_40%)]" : "bg-muted text-muted-foreground"
+        }`}
+      >
+        {ready ? <CheckCircle2 className="h-4 w-4" /> : <Loader2 className="h-4 w-4 animate-spin" />}
+      </div>
+      <span className="text-sm font-medium text-card-foreground">{label}</span>
+    </div>
   );
 }

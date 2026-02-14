@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { Route } from "./+types/play-game";
 import { Link } from "react-router";
-import { ArrowDown, ArrowUp, CheckCircle2, Minus, XCircle } from "lucide-react";
+import { CheckCircle2, Crown, Home, Music, Quote, Star, TrendingUp, Trophy, XCircle } from "lucide-react";
 
-import { Ribbon } from "~/components/ribbon";
+import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { Progress } from "~/components/ui/progress";
 import { searchAutocomplete, type AutocompleteItem } from "~/lib/autocomplete";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import {
@@ -29,19 +28,6 @@ import {
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Game" }];
-}
-
-function phaseInstruction(phase: string) {
-  switch (phase) {
-    case "LISTEN":
-      return "Listen and lock your guess quickly for higher points.";
-    case "REVEAL":
-      return "Review the correct answer and point awards.";
-    case "INTERMISSION":
-      return "Next round is about to start.";
-    default:
-      return "Get ready for the next round.";
-  }
 }
 
 export default function PlayGame({ params }: Route.ComponentProps) {
@@ -94,9 +80,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const [timelineHoverSlot, setTimelineHoverSlot] = useState<number | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
   const revealCardRef = useRef<HTMLDivElement | null>(null);
-  const preIntermissionRankingRef = useRef<Map<string, number>>(new Map());
-  const [intermissionMovementByPlayerId, setIntermissionMovementByPlayerId] = useState<Record<string, number>>({});
-  const [intermissionRevealReady, setIntermissionRevealReady] = useState(false);
   const [finalRevealReady, setFinalRevealReady] = useState(false);
 
   const progress = useMemo(() => {
@@ -105,10 +88,17 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     }
 
     const total = phaseDurations[room.state.phase];
-    const elapsed = total - room.remainingMs;
-
-    return Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
+    return Math.max(0, Math.min(100, Math.round((room.remainingMs / total) * 100)));
   }, [room.remainingMs, room.state.lifecycle, room.state.phase]);
+  const remainingSeconds = Math.ceil(room.remainingMs / 1000);
+  const timerVariant: "default" | "warning" | "danger" =
+    room.state.phase !== "LISTEN"
+      ? "default"
+      : remainingSeconds <= 5
+        ? "danger"
+        : remainingSeconds <= 10
+          ? "warning"
+          : "default";
 
   const submissionKey = playerSession ? `${playerSession.id}:${room.round.id}` : "";
   const timelineSubmissionKey = playerSession ? `${playerSession.id}:${room.round.id}` : "";
@@ -126,7 +116,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const intermissionOpen = room.state.phase === "INTERMISSION";
   const finishedGame = room.state.lifecycle === "finished";
   const intermissionRoundNumber = room.state.roundIndex + 1;
-  const showIntermissionStandings = intermissionOpen && intermissionRoundNumber % 3 === 0;
   const intermissionQuote = useMemo(
     () => pickMusicQuote(`${roomId}:${room.state.phaseStartedAt}:${intermissionRoundNumber}`),
     [intermissionRoundNumber, room.state.phaseStartedAt, roomId],
@@ -255,47 +244,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       block: "start",
     });
   }, [intermissionOpen, revealOpen, room.round.id]);
-
-  useEffect(() => {
-    if (room.state.phase === "INTERMISSION") {
-      return;
-    }
-
-    preIntermissionRankingRef.current = new Map(
-      leaderboard.map((entry, index) => [entry.id, index] as const),
-    );
-  }, [leaderboard, room.state.phase]);
-
-  useEffect(() => {
-    if (room.state.phase !== "INTERMISSION") {
-      setIntermissionMovementByPlayerId({});
-      setIntermissionRevealReady(false);
-      return;
-    }
-    if (!showIntermissionStandings) {
-      setIntermissionMovementByPlayerId({});
-      setIntermissionRevealReady(false);
-      return;
-    }
-
-    const previousRanking = preIntermissionRankingRef.current;
-    const nextMovement = Object.fromEntries(
-      leaderboard.map((entry, index) => {
-        const previousIndex = previousRanking.get(entry.id);
-        return [entry.id, typeof previousIndex === "number" ? previousIndex - index : 0] as const;
-      }),
-    ) as Record<string, number>;
-
-    setIntermissionMovementByPlayerId(nextMovement);
-    setIntermissionRevealReady(false);
-    const timer = window.setTimeout(() => {
-      setIntermissionRevealReady(true);
-    }, 40);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [leaderboard, room.state.phase, room.state.phaseStartedAt, showIntermissionStandings]);
 
   useEffect(() => {
     if (!finishedGame) {
@@ -434,383 +382,429 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const timelinePositionLabel =
     timelineDisplayInsertIndex === null ? null : timelineSlotLabel(timelineEntries, timelineDisplayInsertIndex);
 
-  const nudgeTimeline = (delta: number) => {
-    if (!canSubmitTimeline) {
-      return;
-    }
-
-    const baseIndex = timelineDisplayInsertIndex ?? timelineEntries.length;
-    const nextIndex = clampTimelineInsertIndex(baseIndex + delta, timelineEntries.length);
-    submitTimeline(nextIndex);
-    setTimelineHoverSlot(nextIndex);
-  };
+  const revealRows = [
+    {
+      id: "track",
+      label: "Song title",
+      correct: Boolean(trackCorrect),
+      points: playerBreakdown?.points.track ?? 0,
+    },
+    {
+      id: "artist",
+      label: "Artist",
+      correct: Boolean(artistCorrect),
+      points: playerBreakdown?.points.artist ?? 0,
+    },
+    {
+      id: "timeline",
+      label: "Timeline",
+      correct: Boolean(playerBreakdown?.timelineCorrect),
+      points: playerBreakdown?.points.timeline ?? 0,
+    },
+  ];
+  const intermissionCompactView = intermissionOpen;
+  const layoutWidthClass = room.state.phase === "REVEAL" || intermissionCompactView || finishedGame ? "max-w-lg" : "max-w-3xl";
+  const winnerScore = leaderboard[0]?.score ?? currentScore;
 
   return (
-    <main className="jam-page">
-      <section className="jam-stage w-full max-w-5xl">
-        <Ribbon tone="cool">Player Round</Ribbon>
-
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          <Badge>{room.state.lifecycle.toUpperCase()}</Badge>
-          <Badge variant="warning">Round {room.state.roundIndex + 1}</Badge>
-          <Badge variant={room.state.phase === "LISTEN" ? "success" : "default"}>
-            {phaseLabel(room.state.phase)}
+    <GameLayout className={`mx-auto ${layoutWidthClass}`}>
+      <div className="animate-slide-up flex flex-col gap-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Badge variant="listening">Round {room.state.roundIndex + 1}</Badge>
+            <Badge variant="default">Score {currentScore}</Badge>
+          </div>
+          <Badge variant={finishedGame ? "danger" : room.state.phase === "LISTEN" ? "warning" : room.state.phase === "REVEAL" ? "success" : "warning"}>
+            {finishedGame ? "Final" : phaseLabel(room.state.phase)}
           </Badge>
-          <Badge variant="default">Score {currentScore}</Badge>
         </div>
 
-        <Card className="mt-5">
-          <CardHeader>
-            <CardTitle>{phaseLabel(room.state.phase)} Phase</CardTitle>
-            <CardDescription>{phaseInstruction(room.state.phase)}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div
-              className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]"
-              role="status"
-              aria-live="polite"
-            >
-              {intermissionOpen ? (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Intermission</p>
-                  <p className="font-bold">
-                    {showIntermissionStandings ? "Standings update in progress" : "Music break"}
-                  </p>
-                  <p className="text-sm">
-                    {showIntermissionStandings
-                      ? "Get ready for the next round."
-                      : "Quick vibe check before the next song."}
-                  </p>
-                </>
-              ) : revealOpen ? (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">{room.round.title}</p>
-                  <p className="font-bold">{room.round.artist}</p>
-                  <p className="text-sm">Timeline answer: {room.round.year}</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Now Listening...</p>
-                  <p className="font-bold">Answer hidden until reveal</p>
-                  <p className="text-sm">Use autocomplete to lock your guess in this phase.</p>
-                </>
-              )}
-            </div>
-            {showIntermissionStandings ? (
-              <div className="rounded-2xl border-2 border-[#29459c] bg-[#f4f7ff] p-3">
-                <p className="text-sm font-bold text-[#243a84]">Current top list</p>
-                <ol className="mt-2 space-y-2">
-                  {leaderboard.map((entry, index) => {
-                    const movement = intermissionMovementByPlayerId[entry.id] ?? 0;
-                    const movementBadge =
-                      movement > 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#ddffec] px-2 py-0.5 text-xs font-bold text-[#1b8a4c]">
-                          <ArrowUp className="h-3.5 w-3.5" />
-                          {movement}
-                        </span>
-                      ) : movement < 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#ffe4e1] px-2 py-0.5 text-xs font-bold text-[#b24135]">
-                          <ArrowDown className="h-3.5 w-3.5" />
-                          {Math.abs(movement)}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#edf1ff] px-2 py-0.5 text-xs font-bold text-[#4b5f9f]">
-                          <Minus className="h-3.5 w-3.5" />
-                          0
-                        </span>
-                      );
+        {finishedGame ? (
+          <>
+            <GameCard className="relative overflow-hidden border-[hsl(var(--primary)/0.25)] p-8 text-center">
+              <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <span
+                    key={`confetti-${i}`}
+                    className="absolute h-2 w-2 animate-float rounded-full"
+                    style={{
+                      left: `${8 + (i * 5.5) % 84}%`,
+                      top: `${4 + (i * 9) % 70}%`,
+                      backgroundColor: ["hsl(4 80% 62%)", "hsl(174 60% 42%)", "hsl(45 95% 52%)", "hsl(200 75% 50%)", "hsl(262 50% 58%)"][i % 5],
+                      animationDelay: `${i * 0.15}s`,
+                      opacity: 0.5,
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="relative z-10 flex flex-col items-center gap-4">
+                <CatMascot variant="celebrate" size="lg" className="animate-bounce-in" />
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[hsl(var(--primary)/0.1)]">
+                  <Trophy className="h-8 w-8 text-[hsl(var(--primary))]" />
+                </div>
+                <div>
+                  <p className="mb-1 text-sm font-semibold uppercase tracking-widest text-muted-foreground">Game Complete</p>
+                  <h2 className="text-balance text-3xl font-bold text-card-foreground">Final Standings</h2>
+                </div>
+              </div>
+            </GameCard>
 
-                    return (
-                      <li
-                        key={entry.id}
-                        className={`flex items-center justify-between rounded-xl border-2 px-3 py-2 transition-all duration-500 ${
-                          entry.id === playerSession?.id
-                            ? "border-[#1f8f3f] bg-[#e9ffe0]"
-                            : "border-[#cad8ff] bg-white"
-                        } ${
-                          intermissionRevealReady
-                            ? "translate-y-0 opacity-100"
-                            : movement > 0
-                              ? "translate-y-3 opacity-0"
-                              : movement < 0
-                                ? "-translate-y-3 opacity-0"
-                                : "opacity-0"
-                        }`}
-                        style={{
-                          transitionDelay: `${index * 90}ms`,
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-extrabold text-[#243a84]">#{index + 1}</span>
-                          <span className="text-sm font-bold text-[#223f94]">{entry.name}</span>
-                          {movementBadge}
-                        </div>
-                        <span className="text-sm font-extrabold text-[#2d2a77]">{entry.score}</span>
-                      </li>
-                    );
-                  })}
-                  {leaderboard.length === 0 ? (
-                    <li className="rounded-xl border-2 border-[#cad8ff] bg-white px-3 py-2 text-xs font-semibold text-[#5f6ea9]">
-                      Waiting for players.
+            <GameCard className="p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-[hsl(var(--primary))]" />
+                <p className="text-sm font-bold text-card-foreground">Final Standings</p>
+              </div>
+              <p className="mb-4 text-xs text-muted-foreground">Revealing from the bottom to the top.</p>
+              <ol className="space-y-2">
+                {leaderboard.map((entry, index) => {
+                  const isWinner = index === 0;
+                  return (
+                    <li
+                      key={entry.id}
+                      className={`flex items-center gap-3 rounded-xl border p-3 transition-all duration-500 ${
+                        isWinner
+                          ? "border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] shadow-md shadow-[hsl(var(--primary)/0.1)]"
+                          : "border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.4)]"
+                      } ${finalRevealReady ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"}`}
+                      style={{ transitionDelay: `${(leaderboard.length - 1 - index) * 140}ms` }}
+                    >
+                      <div className="flex w-8 items-center justify-center">
+                        {index === 0 ? (
+                          <Crown className="h-6 w-6 text-[hsl(var(--primary))]" />
+                        ) : index === 1 ? (
+                          <Star className="h-5 w-5 text-[hsl(45_95%_52%)]" />
+                        ) : (
+                          <span className="text-sm font-bold text-muted-foreground">#{index + 1}</span>
+                        )}
+                      </div>
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold ${
+                        isWinner
+                          ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                          : "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]"
+                      }`}>
+                        {entry.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="flex-1 font-bold text-card-foreground">{entry.name}</span>
+                      <span className={`font-mono text-xl font-bold ${isWinner ? "text-[hsl(var(--primary))]" : "text-card-foreground"}`}>
+                        {entry.score.toLocaleString()}
+                      </span>
                     </li>
-                  ) : null}
-                </ol>
+                  );
+                })}
+                {leaderboard.length === 0 ? (
+                  <li className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.4)] px-3 py-2 text-xs font-semibold text-muted-foreground">
+                    No players to rank.
+                  </li>
+                ) : null}
+              </ol>
+              <div className="mt-4 rounded-xl border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.08)] px-4 py-2">
+                <p className="text-sm font-bold text-[hsl(var(--primary))]">Winning score: {winnerScore}</p>
               </div>
-            ) : null}
-            {intermissionOpen && !showIntermissionStandings ? (
-              <div className="rounded-2xl border-2 border-[#29459c] bg-[#f4f7ff] p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-[#4f5fa2]">Now playing wisdom</p>
-                <p className="mt-2 text-lg font-bold text-[#243a84]">"{intermissionQuote}"</p>
+            </GameCard>
+          </>
+        ) : room.state.phase === "REVEAL" ? (
+          <>
+            <GameCard className="relative overflow-hidden border-accent/30 p-6">
+              <div className="absolute inset-x-0 top-0 h-1 bg-[hsl(var(--accent))]" />
+              <div className="flex items-start gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/10">
+                  <Music className="h-7 w-7 text-[hsl(var(--accent))]" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-card-foreground">{room.round.title}</p>
+                  <p className="text-base font-semibold text-muted-foreground">{room.round.artist}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Released in {room.round.year}</p>
+                </div>
               </div>
-            ) : null}
+            </GameCard>
 
-            <div className="space-y-2">
-              <Progress value={progress} aria-label="Round phase progress" />
-              <p className="text-right text-sm font-bold text-[#2d2a77]" role="status" aria-live="polite">
-                {room.state.lifecycle === "running" ? `${Math.ceil(room.remainingMs / 1000)}s` : "Waiting"}
-              </p>
-            </div>
-            {revealOpen ? (
-              <div
-                ref={revealCardRef}
-                className="rounded-2xl border-2 border-[#29459c] bg-[#fff8dd] p-3"
-              >
-                <p className="text-sm font-bold text-[#243a84]">Round result</p>
-                <div className="mt-2 space-y-2">
-                  {[
-                    {
-                      id: "track",
-                      label: "Song title",
-                      correct: Boolean(trackCorrect),
-                      points: playerBreakdown?.points.track ?? 0,
-                    },
-                    {
-                      id: "artist",
-                      label: "Artist",
-                      correct: Boolean(artistCorrect),
-                      points: playerBreakdown?.points.artist ?? 0,
-                    },
-                    {
-                      id: "timeline",
-                      label: "Timeline",
-                      correct: Boolean(playerBreakdown?.timelineCorrect),
-                      points: playerBreakdown?.points.timeline ?? 0,
-                    },
-                  ].map((entry) => (
+            <TimerBar
+              key={`${room.state.phase}:${room.state.phaseStartedAt}`}
+              progress={progress}
+              seconds={remainingSeconds}
+              variant="default"
+            />
+
+            <GameCard className="animate-slide-up p-5">
+              <div ref={revealCardRef}>
+                <p className="mb-4 text-sm font-bold text-card-foreground">Round Result</p>
+                <div className="stagger-children flex flex-col gap-2">
+                  {revealRows.map((entry) => (
                     <div
                       key={entry.id}
-                      className="flex items-center justify-between rounded-lg border border-[#d4c47f] bg-white/70 px-3 py-2"
+                      className={`flex items-center gap-3 rounded-xl border p-3 transition-all ${
+                        entry.correct
+                          ? "border-[hsl(155_65%_40%/0.25)] bg-[hsl(155_65%_40%/0.08)]"
+                          : "border-[hsl(var(--destructive)/0.25)] bg-[hsl(var(--destructive)/0.08)]"
+                      }`}
                     >
-                      <span className="flex items-center gap-2 text-sm font-bold text-[#243a84]">
-                        {entry.correct ? (
-                          <CheckCircle2 className="h-4 w-4 text-[#1f8f3f]" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-[#b24135]" />
-                        )}
+                      {entry.correct ? (
+                        <CheckCircle2 className="h-5 w-5 shrink-0 text-[#1f8f3f]" />
+                      ) : (
+                        <XCircle className="h-5 w-5 shrink-0 text-[hsl(var(--destructive))]" />
+                      )}
+                      <span className="flex-1 text-sm font-semibold text-card-foreground">
                         {entry.label}
                       </span>
-                      <span className="text-sm font-extrabold text-[#2d2a77]">
+                      <span
+                        className={`font-mono text-sm font-bold ${
+                          entry.correct ? "text-[#1f8f3f]" : "text-[hsl(var(--destructive))]"
+                        }`}
+                      >
                         {entry.correct ? `+${entry.points}` : "0"}
                       </span>
                     </div>
                   ))}
                 </div>
               </div>
-            ) : null}
+            </GameCard>
 
-            {revealOpen ? (
-              <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-3">
-                <p className="text-sm font-bold text-[#223f94]">Your scoring</p>
-                {playerBreakdown ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-[#1f1f55]">
-                    <Badge variant="success">Round +{playerBreakdown.points.total}</Badge>
-                    <Badge variant="default">Total {currentScore}</Badge>
+            <GameCard className="animate-slide-up p-5" style={{ animationDelay: "200ms" }}>
+              <p className="mb-3 text-sm font-bold text-card-foreground">Your Scoring</p>
+              {playerBreakdown ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 rounded-xl border border-[hsl(155_65%_40%/0.25)] bg-[hsl(155_65%_40%/0.08)] px-4 py-2">
+                    <TrendingUp className="h-4 w-4 text-[#1f8f3f]" />
+                    <span className="text-sm font-bold text-[#1f8f3f]">+{playerBreakdown.points.total}</span>
                   </div>
+                  <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.08)] px-4 py-2">
+                    <span className="text-sm font-bold text-[hsl(var(--primary))]">Total: {currentScore}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs font-semibold text-muted-foreground">No points awarded this round.</p>
+              )}
+            </GameCard>
+          </>
+        ) : intermissionCompactView ? (
+          <Card>
+            <CardContent className="space-y-6 p-8 text-center">
+              <div className="flex flex-col items-center gap-6">
+                <CatMascot variant="chill" size="lg" className="animate-float" />
+
+                <div>
+                  <p className="text-xl font-bold text-card-foreground">Intermission</p>
+                  <p className="text-sm text-muted-foreground">Quick vibe check before the next song</p>
+                </div>
+
+                <Equalizer className="h-8" />
+
+                <div className="flex items-center justify-center">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)]">
+                    <span className="animate-count-pulse font-mono text-3xl font-bold text-[hsl(var(--primary))]">
+                      {remainingSeconds}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="relative max-w-sm rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)] p-4">
+                  <div className="absolute -top-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-l border-t border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)]" />
+                  <div className="relative">
+                    <Quote className="absolute -left-0.5 -top-0.5 h-4 w-4 text-[hsl(var(--primary)/0.4)]" />
+                    <p className="pl-5 text-sm italic leading-relaxed text-card-foreground">
+                      {`"${intermissionQuote}"`}
+                    </p>
+                    <p className="mt-2 pl-5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Cat Wisdom
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="space-y-4 pt-4">
+              <div
+                className={
+                  room.state.phase === "LISTEN"
+                    ? "rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.35)] p-4 text-card-foreground"
+                    : "rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]"
+                }
+                role="status"
+                aria-live="polite"
+              >
+                {intermissionOpen ? (
+                  <>
+                    <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Intermission</p>
+                    <p className="font-bold">Music break</p>
+                    <p className="text-sm">
+                      Quick vibe check before the next song.
+                    </p>
+                  </>
                 ) : (
-                  <p className="mt-2 text-xs font-semibold text-[#4f5fa2]">
-                    No points awarded this round.
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <CatMascot variant="thinking" size="sm" className="animate-wiggle" />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Equalizer />
+                        <span className="text-sm font-semibold text-card-foreground">Now Listening...</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">Answer hidden until reveal</p>
+                      <p className="text-xs text-muted-foreground">Use autocomplete to lock your guess in this phase.</p>
+                    </div>
+                  </div>
                 )}
               </div>
-            ) : null}
+            <TimerBar
+              key={`${room.state.phase}:${room.state.phaseStartedAt}`}
+              progress={progress}
+              seconds={remainingSeconds}
+              variant={timerVariant}
+            />
 
-            {finishedGame ? (
-              <div className="rounded-2xl border-2 border-[#29459c] bg-[#f8f3ff] p-3">
-                <p className="text-sm font-bold text-[#243a84]">Final standings</p>
-                <p className="text-xs font-semibold text-[#4f5fa2]">
-                  Revealing from the bottom to the top.
-                </p>
-                <ol className="mt-3 space-y-2">
-                  {leaderboard.map((entry, index) => (
-                    <li
-                      key={entry.id}
-                      className={`flex items-center justify-between rounded-xl border-2 px-3 py-2 transition-all duration-500 ${
-                        entry.id === playerSession?.id
-                          ? "border-[#1f8f3f] bg-[#e9ffe0]"
-                          : "border-[#cab8ff] bg-white"
-                      } ${
-                        finalRevealReady ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
-                      }`}
-                      style={{
-                        transitionDelay: `${(leaderboard.length - 1 - index) * 140}ms`,
-                      }}
-                    >
-                      <span className="text-sm font-extrabold text-[#243a84]">
-                        #{index + 1} {entry.name}
-                      </span>
-                      <span className="text-sm font-extrabold text-[#2d2a77]">{entry.score}</span>
-                    </li>
-                  ))}
-                  {leaderboard.length === 0 ? (
-                    <li className="rounded-xl border-2 border-[#cab8ff] bg-white px-3 py-2 text-xs font-semibold text-[#5f6ea9]">
-                      No players to rank.
-                    </li>
-                  ) : null}
-                </ol>
-              </div>
-            ) : null}
-
-            {!intermissionOpen && !finishedGame ? (
+            {room.state.phase === "LISTEN" ? (
               <>
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="grid gap-2 text-sm font-bold text-[#32277e]">
+              <div className="grid gap-2 text-sm font-bold text-card-foreground">
                 <label htmlFor="track-guess-input">Song title</label>
-                <Input
-                  id="track-guess-input"
-                  placeholder="Type at least 2 chars"
-                  value={displayedTrackQuery}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setTrackQuery(nextValue);
-                    setSelectedTrack(null);
-                  }}
-                  onFocus={() => {
-                    setTrackInputFocused(true);
-                  }}
-                  onBlur={() => {
-                    window.setTimeout(() => {
-                      setTrackInputFocused(false);
-                    }, 120);
-                  }}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  inputMode="search"
-                  aria-autocomplete="list"
-                  aria-controls="track-guess-listbox"
-                  aria-expanded={
-                    canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2
-                  }
-                  disabled={!canEditGuess}
-                />
-                {selectedTrack && !intermissionOpen ? (
-                  <span className="text-xs font-semibold text-[#22438f]">Selected: {selectedTrack.display}</span>
-                ) : null}
-                {canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2 ? (
-                  <ul
-                    id="track-guess-listbox"
-                    role="listbox"
-                    className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90"
-                  >
-                    {trackSuggestions.map((suggestion) => (
-                      <li key={suggestion.id} className="border-b border-[#cad8ff] last:border-b-0">
-                        <button
-                          type="button"
-                          role="option"
-                          className="w-full px-3 py-2 text-left text-sm font-semibold text-[#223f94] hover:bg-[#eef4ff]"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                          }}
-                          onClick={() => {
-                            setSelectedTrack(suggestion);
-                            setTrackQuery(suggestion.display);
-                            setTrackInputFocused(false);
-                          }}
-                        >
-                          {suggestion.display}
-                        </button>
-                      </li>
-                    ))}
-                    {trackSuggestions.length === 0 ? (
-                      <li className="px-3 py-2 text-xs font-semibold text-[#6558a8]">No matches found.</li>
-                    ) : null}
-                  </ul>
-                ) : null}
+                <div className="relative z-20">
+                  <Input
+                    id="track-guess-input"
+                    placeholder="Type at least 2 chars"
+                    className="h-11 border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-card-foreground placeholder:text-muted-foreground"
+                    value={displayedTrackQuery}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setTrackQuery(nextValue);
+                      setSelectedTrack(null);
+                    }}
+                    onFocus={() => {
+                      setTrackInputFocused(true);
+                    }}
+                    onBlur={() => {
+                      window.setTimeout(() => {
+                        setTrackInputFocused(false);
+                      }, 120);
+                    }}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    inputMode="search"
+                    aria-autocomplete="list"
+                    aria-controls="track-guess-listbox"
+                    aria-expanded={
+                      canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2
+                    }
+                    disabled={!canEditGuess}
+                  />
+                  {canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2 ? (
+                    <ul
+                      id="track-guess-listbox"
+                      role="listbox"
+                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-40 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
+                    >
+                      {trackSuggestions.map((suggestion) => (
+                        <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">
+                          <button
+                            type="button"
+                            role="option"
+                            className="w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                            }}
+                            onClick={() => {
+                              setSelectedTrack(suggestion);
+                              setTrackQuery(suggestion.display);
+                              setTrackInputFocused(false);
+                            }}
+                          >
+                            {suggestion.display}
+                          </button>
+                        </li>
+                      ))}
+                      {trackSuggestions.length === 0 ? (
+                        <li className="px-3 py-2 text-xs font-semibold text-muted-foreground">No matches found.</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </div>
+                <p className="min-h-4 text-xs font-semibold text-muted-foreground">
+                  {selectedTrack && !intermissionOpen ? `Selected: ${selectedTrack.display}` : ""}
+                </p>
               </div>
-              <div className="grid gap-2 text-sm font-bold text-[#32277e]">
+              <div className="grid gap-2 text-sm font-bold text-card-foreground">
                 <label htmlFor="artist-guess-input">Artist</label>
-                <Input
-                  id="artist-guess-input"
-                  placeholder="Type at least 2 chars"
-                  value={displayedArtistQuery}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setArtistQuery(nextValue);
-                    setSelectedArtist(null);
-                  }}
-                  onFocus={() => {
-                    setArtistInputFocused(true);
-                  }}
-                  onBlur={() => {
-                    window.setTimeout(() => {
-                      setArtistInputFocused(false);
-                    }, 120);
-                  }}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  inputMode="search"
-                  aria-autocomplete="list"
-                  aria-controls="artist-guess-listbox"
-                  aria-expanded={
-                    canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2
-                  }
-                  disabled={!canEditGuess}
-                />
-                {selectedArtist && !intermissionOpen ? (
-                  <span className="text-xs font-semibold text-[#22438f]">Selected: {selectedArtist.display}</span>
-                ) : null}
-                {canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2 ? (
-                  <ul
-                    id="artist-guess-listbox"
-                    role="listbox"
-                    className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90"
-                  >
-                    {artistSuggestions.map((suggestion) => (
-                      <li key={suggestion.id} className="border-b border-[#cad8ff] last:border-b-0">
-                        <button
-                          type="button"
-                          role="option"
-                          className="w-full px-3 py-2 text-left text-sm font-semibold text-[#223f94] hover:bg-[#eef4ff]"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                          }}
-                          onClick={() => {
-                            setSelectedArtist(suggestion);
-                            setArtistQuery(suggestion.display);
-                            setArtistInputFocused(false);
-                          }}
-                        >
-                          {suggestion.display}
-                        </button>
-                      </li>
-                    ))}
-                    {artistSuggestions.length === 0 ? (
-                      <li className="px-3 py-2 text-xs font-semibold text-[#6558a8]">No matches found.</li>
-                    ) : null}
-                  </ul>
-                ) : null}
+                <div className="relative z-20">
+                  <Input
+                    id="artist-guess-input"
+                    placeholder="Type at least 2 chars"
+                    className="h-11 border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-card-foreground placeholder:text-muted-foreground"
+                    value={displayedArtistQuery}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setArtistQuery(nextValue);
+                      setSelectedArtist(null);
+                    }}
+                    onFocus={() => {
+                      setArtistInputFocused(true);
+                    }}
+                    onBlur={() => {
+                      window.setTimeout(() => {
+                        setArtistInputFocused(false);
+                      }, 120);
+                    }}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    inputMode="search"
+                    aria-autocomplete="list"
+                    aria-controls="artist-guess-listbox"
+                    aria-expanded={
+                      canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2
+                    }
+                    disabled={!canEditGuess}
+                  />
+                  {canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2 ? (
+                    <ul
+                      id="artist-guess-listbox"
+                      role="listbox"
+                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-40 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
+                    >
+                      {artistSuggestions.map((suggestion) => (
+                        <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">
+                          <button
+                            type="button"
+                            role="option"
+                            className="w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                            }}
+                            onClick={() => {
+                              setSelectedArtist(suggestion);
+                              setArtistQuery(suggestion.display);
+                              setArtistInputFocused(false);
+                            }}
+                          >
+                            {suggestion.display}
+                          </button>
+                        </li>
+                      ))}
+                      {artistSuggestions.length === 0 ? (
+                        <li className="px-3 py-2 text-xs font-semibold text-muted-foreground">No matches found.</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </div>
+                <p className="min-h-4 text-xs font-semibold text-muted-foreground">
+                  {selectedArtist && !intermissionOpen ? `Selected: ${selectedArtist.display}` : ""}
+                </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={submitGuess} disabled={!canSubmitGuess}>
+              <Button
+                className="h-10 px-6 font-bold shadow-md shadow-[hsl(var(--primary)/0.2)]"
+                onClick={submitGuess}
+                disabled={!canSubmitGuess}
+              >
                 Lock Guess
               </Button>
               <Button
                 variant="outline"
+                className="h-10 border-[hsl(var(--input))] bg-card text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
                 onClick={() => {
                   setSelectedTrack(null);
                   setTrackQuery("");
@@ -835,29 +829,19 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               ) : null}
             </div>
 
-            <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#f7fbff] p-3">
-              <p className="text-sm font-bold text-[#223f94]">Timeline placement</p>
-              <p className="text-xs font-semibold text-[#4d5d9f]">
+            <div className="rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.35)] p-3">
+              <p className="text-sm font-bold text-card-foreground">Timeline placement</p>
+              <p className="text-xs font-semibold text-muted-foreground">
                 {currentSubmission
                   ? "Drag the release year between items. You can keep moving it until the timer ends."
                   : "Lock your guess to unlock timeline placement."}
               </p>
               {currentSubmission ? (
-                <p className="mt-1 text-xs font-semibold text-[#3f4f93]" role="status" aria-live="polite">
+                <p className="mt-1 text-xs font-semibold text-muted-foreground" role="status" aria-live="polite">
                   Current position: {timelinePositionLabel ?? "Not placed"}
                 </p>
               ) : null}
-              {canSubmitTimeline ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => nudgeTimeline(-1)}>
-                    Move Earlier
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => nudgeTimeline(1)}>
-                    Move Later
-                  </Button>
-                </div>
-              ) : null}
-              <div className="mt-3 rounded-xl border-2 border-dashed border-[#6a7ec2] bg-white px-3 py-2">
+              <div className="mt-3 rounded-xl border-2 border-dashed border-[hsl(var(--input))] bg-[hsl(var(--card)/0.7)] px-3 py-2">
                 <div
                   draggable={canSubmitTimeline}
                   onDragStart={() => {
@@ -879,10 +863,10 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     setTimelineDragging(true);
                     setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
                   }}
-                  className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold text-[#223f94] ${
+                  className={`rounded-lg border px-3 py-2 text-sm font-bold ${
                     canSubmitTimeline
-                      ? "cursor-grab border-[#2f4eb8] bg-[#eaf1ff]"
-                      : "border-[#c4d1f3] bg-[#f3f7ff] text-[#6a78b0]"
+                      ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
+                      : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
                   }`}
                   aria-label="Release year marker"
                 >
@@ -940,12 +924,12 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                           setTimelineDragging(true);
                           setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
                         }}
-                        className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold ${
+                        className={`rounded-lg border px-3 py-2 text-sm font-bold ${
                           timelineDragging
-                            ? "border-dashed border-[#2f4eb8] bg-[#eaf1ff] text-[#223f94]"
+                            ? "border-dashed border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--primary)/0.05)] text-[hsl(var(--primary))]"
                             : canSubmitTimeline
-                              ? "cursor-grab border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
-                              : "border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                              ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
+                              : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
                         }`}
                       >
                         Release year
@@ -954,7 +938,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     <div
                       data-timeline-entry="true"
                       onDragOver={(event) => handleTimelineItemDragOver(event, index)}
-                      className="rounded-lg border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2 text-sm font-extrabold text-[#223f94]"
+                      className="rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.55)] px-3 py-2 text-sm font-bold text-card-foreground"
                     >
                       {timelineEntryLabel(entry)}
                     </div>
@@ -983,12 +967,12 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                       setTimelineDragging(true);
                       setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
                     }}
-                    className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold ${
+                    className={`rounded-lg border px-3 py-2 text-sm font-bold ${
                       timelineDragging
-                        ? "border-dashed border-[#2f4eb8] bg-[#eaf1ff] text-[#223f94]"
+                        ? "border-dashed border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--primary)/0.05)] text-[hsl(var(--primary))]"
                         : canSubmitTimeline
-                          ? "cursor-grab border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
-                          : "border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                          ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
+                          : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
                     }`}
                   >
                     Release year
@@ -1001,16 +985,20 @@ export default function PlayGame({ params }: Route.ComponentProps) {
 
           </CardContent>
         </Card>
+        )}
 
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <div className="flex flex-wrap justify-center gap-3">
           <Button asChild variant="outline">
             <Link to={`/play/lobby/${roomId}`}>Back To Lobby</Link>
           </Button>
-          <Button asChild variant="secondary">
-            <Link to={`/results/${roomId}`}>Open Results</Link>
+          <Button asChild variant="outline">
+            <Link to="/">
+              <Home className="h-4 w-4" />
+              Home
+            </Link>
           </Button>
         </div>
-      </section>
-    </main>
+      </div>
+    </GameLayout>
   );
 }

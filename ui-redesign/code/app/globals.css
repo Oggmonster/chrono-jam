@@ -1,0 +1,192 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer base {
+  :root {
+    /* ChronoJam - Warm Board Game Night Theme */
+    /* Soft warm cream background */
+    --background: 40 40% 96%;
+    --foreground: 230 25% 18%;
+
+    /* White cards with great readability */
+    --card: 0 0% 100%;
+    --card-foreground: 230 25% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 25% 18%;
+
+    /* Coral/salmon primary - warm and energetic */
+    --primary: 4 80% 62%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Soft slate secondary */
+    --secondary: 230 20% 92%;
+    --secondary-foreground: 230 25% 25%;
+
+    /* Muted warm grays */
+    --muted: 40 15% 90%;
+    --muted-foreground: 230 12% 48%;
+
+    /* Teal accent */
+    --accent: 174 60% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 230 15% 85%;
+    --input: 230 15% 88%;
+    --ring: 4 80% 62%;
+
+    --chart-1: 4 80% 62%;
+    --chart-2: 174 60% 42%;
+    --chart-3: 45 90% 55%;
+    --chart-4: 262 50% 58%;
+    --chart-5: 200 70% 52%;
+
+    --radius: 1rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 230 25% 18%;
+    --sidebar-primary: 4 80% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 40 15% 90%;
+    --sidebar-accent-foreground: 230 25% 18%;
+    --sidebar-border: 230 15% 85%;
+    --sidebar-ring: 4 80% 62%;
+
+    /* Game-specific tokens */
+    --game-success: 155 65% 40%;
+    --game-warning: 45 95% 52%;
+    --game-listening: 200 75% 50%;
+    --game-reveal: 174 60% 42%;
+    --game-glow: 4 80% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom animations for game feel */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px hsl(4 80% 62% / 0.2); }
+  50% { box-shadow: 0 0 40px hsl(4 80% 62% / 0.4); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes bounce-in {
+  0% { opacity: 0; transform: scale(0.3); }
+  50% { transform: scale(1.05); }
+  70% { transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes count-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes vinyl-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(5deg); }
+}
+
+@keyframes note-drift {
+  0% { transform: translateY(0) rotate(0deg); opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { transform: translateY(-60px) rotate(20deg); opacity: 0; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s ease-out forwards;
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.6s ease-out forwards;
+}
+
+.animate-count-pulse {
+  animation: count-pulse 0.5s ease-out;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, hsl(4 80% 62% / 0.08) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+.animate-vinyl-spin {
+  animation: vinyl-spin 3s linear infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-wiggle {
+  animation: wiggle 2s ease-in-out infinite;
+}
+
+.animate-note-drift {
+  animation: note-drift 3s ease-out infinite;
+}
+
+/* Stagger children animations */
+.stagger-children > * {
+  opacity: 0;
+  animation: slide-up 0.4s ease-out forwards;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 80ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 160ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 240ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 320ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 400ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 480ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 560ms; }

@@ -1,10 +1,10 @@
 import { type FormEvent, useState } from "react";
 import type { Route } from "./+types/play-join";
 import { Link, useNavigate } from "react-router";
+import { ArrowLeft, LogIn } from "lucide-react";
 
-import { Ribbon } from "~/components/ribbon";
+import { CatMascot, GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { createPlayerId, getPlayerSession, savePlayerSession } from "~/lib/player-session";
 import { normalizeRoomCode } from "~/lib/room-code";
@@ -15,7 +15,7 @@ export function meta({}: Route.MetaArgs) {
 
 export default function PlayJoin() {
   const navigate = useNavigate();
-  const [roomCode, setRoomCode] = useState("8372");
+  const [roomCode, setRoomCode] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [joinError, setJoinError] = useState("");
   const [joining, setJoining] = useState(false);
@@ -72,58 +72,61 @@ export default function PlayJoin() {
   };
 
   return (
-    <main className="jam-page">
-      <section className="jam-stage w-full max-w-2xl">
-        <Ribbon tone="cool">Join Room</Ribbon>
+    <GameLayout className="mx-auto max-w-md">
+      <div className="animate-slide-up flex flex-col items-center gap-6">
+        <CatMascot variant="thinking" size="md" className="animate-wiggle" />
+        <div className="flex flex-col items-center gap-2">
+          <GameTitle className="text-2xl md:text-3xl">Join a Room</GameTitle>
+          <GameSubtitle>Enter the code shown on the host screen</GameSubtitle>
+        </div>
 
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Player Device</CardTitle>
-            <CardDescription>Use the room code shown on the host screen.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-4" onSubmit={submit}>
-              <label className="grid gap-2 text-sm font-bold text-[#32277e]">
-                Room code
-                <Input
-                  value={roomCode}
-                  onChange={(event) => {
-                    setRoomCode(event.target.value);
-                    setJoinError("");
-                  }}
-                  placeholder="8372"
-                  maxLength={8}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-bold text-[#32277e]">
-                Your name
-                <Input
-                  value={playerName}
-                  onChange={(event) => {
-                    setPlayerName(event.target.value);
-                    setJoinError("");
-                  }}
-                  placeholder="e.g. Alex"
-                  maxLength={20}
-                />
-              </label>
-              {joinError ? (
-                <p className="text-sm font-semibold text-[#8d2e2a]">{joinError}</p>
-              ) : null}
+        <GameCard className="w-full p-6">
+          <form className="flex flex-col gap-5" onSubmit={submit}>
+            <label className="flex flex-col gap-2 text-sm font-semibold text-card-foreground">
+              Room Code
+              <Input
+                value={roomCode}
+                onChange={(event) => {
+                  setRoomCode(event.target.value.toUpperCase());
+                  setJoinError("");
+                }}
+                placeholder="e.g. 6095"
+                maxLength={8}
+                className="h-14 text-center font-mono text-2xl font-bold tracking-[0.3em]"
+              />
+            </label>
 
-              <div className="flex flex-wrap gap-3">
-                <Button type="submit" size="lg" disabled={!playerName.trim() || joining}>
-                  Join Lobby
-                </Button>
-                <Button asChild variant="secondary">
-                  <Link to="/">Back</Link>
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </section>
-    </main>
+            <label className="flex flex-col gap-2 text-sm font-semibold text-card-foreground">
+              Your Name
+              <Input
+                value={playerName}
+                onChange={(event) => {
+                  setPlayerName(event.target.value);
+                  setJoinError("");
+                }}
+                placeholder="e.g. Alex"
+                maxLength={20}
+                className="h-12"
+              />
+            </label>
+
+            {joinError ? <p className="text-sm font-semibold text-[hsl(var(--destructive))]">{joinError}</p> : null}
+
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" size="lg" className="h-12 flex-1" disabled={!playerName.trim() || joining}>
+                <LogIn className="h-4 w-4" />
+                Join Lobby
+              </Button>
+              <Button asChild variant="outline" size="lg" className="h-12">
+                <Link to="/">
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </form>
+        </GameCard>
+      </div>
+    </GameLayout>
   );
 }
 

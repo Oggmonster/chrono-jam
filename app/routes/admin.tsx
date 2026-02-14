@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Form, redirect } from "react-router";
+import { Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/admin";
+import { Home } from "lucide-react";
 
-import { Ribbon } from "~/components/ribbon";
+import { GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { buildAdminAuthCookie, getAdminPassword, isAdminAuthenticated, isAdminPasswordConfigured } from "~/lib/admin-auth.server";
 import { generateBaseBatteryFromPlaylist, generatePlaylistPackFromPlaylist } from "~/lib/admin-battery.server";
@@ -236,31 +236,30 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
   }, []);
 
   return (
-    <main className="jam-page">
-      <section className="jam-stage w-full max-w-3xl">
-        <Ribbon tone="cool">Admin</Ribbon>
+    <GameLayout className="mx-auto max-w-3xl">
+      <div className="animate-slide-up flex flex-col gap-4">
+        <div className="flex flex-col items-center gap-2">
+          <GameTitle className="text-2xl md:text-3xl">Admin</GameTitle>
+          <GameSubtitle>Playlist and battery generation tools</GameSubtitle>
+        </div>
 
         {!loaderData.adminPasswordConfigured ? (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>Missing Admin Password</CardTitle>
-              <CardDescription>
+          <GameCard className="p-5">
+            <h3 className="text-lg font-bold text-card-foreground">Missing Admin Password</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
                 Set <code>ADMIN_PASSWORD</code> in environment variables to enable this page.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+            </p>
+          </GameCard>
         ) : null}
 
         {loaderData.adminPasswordConfigured && !loaderData.authenticated ? (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>Sign In</CardTitle>
-              <CardDescription>Simple password protection for admin tools.</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <GameCard className="p-5">
+            <h3 className="text-lg font-bold text-card-foreground">Sign In</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Simple password protection for admin tools.</p>
+            <div className="mt-4">
               <Form method="post" className="grid gap-4">
                 <input type="hidden" name="intent" value="login" />
-                <label className="grid gap-2 text-sm font-bold text-[#32277e]">
+                <label className="grid gap-2 text-sm font-semibold text-card-foreground">
                   Admin password
                   <Input name="password" type="password" required />
                 </label>
@@ -268,23 +267,21 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                   Sign In
                 </Button>
               </Form>
-            </CardContent>
-          </Card>
+            </div>
+          </GameCard>
         ) : null}
 
         {loaderData.adminPasswordConfigured && loaderData.authenticated ? (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>Base Battery Generator</CardTitle>
-              <CardDescription>
+          <GameCard className="p-5">
+            <h3 className="text-lg font-bold text-card-foreground">Base Battery Generator</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
                 Builds a new <code>base-battery.vN.json</code> from a Spotify playlist and updates the latest-version manifest.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            </p>
+            <div className="mt-4 space-y-4">
               <Form method="post" className="grid gap-4">
                 <input type="hidden" name="intent" value="generate_base_battery" />
                 <input type="hidden" name="spotifyAccessToken" value={browserToken} />
-                <label className="grid gap-2 text-sm font-bold text-[#32277e]">
+                <label className="grid gap-2 text-sm font-semibold text-card-foreground">
                   Spotify playlist URL or ID
                   <Input
                     name="playlist"
@@ -295,7 +292,7 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                     spellCheck={false}
                   />
                 </label>
-                <p className="text-xs font-semibold text-[#4d5d9f]">
+                <p className="text-xs text-muted-foreground">
                   Host browser token: {browserToken ? "available" : "missing"}.
                 </p>
                 <Button type="submit" variant="success">
@@ -309,24 +306,22 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                   Sign Out
                 </Button>
               </Form>
-            </CardContent>
-          </Card>
+            </div>
+          </GameCard>
         ) : null}
 
         {loaderData.adminPasswordConfigured && loaderData.authenticated ? (
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle>Playlist Pack Generator</CardTitle>
-              <CardDescription>
+          <GameCard className="p-5">
+            <h3 className="text-lg font-bold text-card-foreground">Playlist Pack Generator</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
                 Builds a new <code>playlists/&lt;pack-id&gt;.vN.json</code> from Spotify and updates
                 <code>playlists/index.json</code>.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            </p>
+            <div className="mt-4 space-y-4">
               <Form method="post" className="grid gap-4">
                 <input type="hidden" name="intent" value="generate_playlist_pack" />
                 <input type="hidden" name="spotifyAccessToken" value={browserToken} />
-                <label className="grid gap-2 text-sm font-bold text-[#32277e]">
+                <label className="grid gap-2 text-sm font-semibold text-card-foreground">
                   Pack ID
                   <Input
                     name="playlistPackId"
@@ -337,7 +332,7 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                     spellCheck={false}
                   />
                 </label>
-                <label className="grid gap-2 text-sm font-bold text-[#32277e]">
+                <label className="grid gap-2 text-sm font-semibold text-card-foreground">
                   Spotify playlist URL or ID
                   <Input
                     name="playlist"
@@ -348,27 +343,25 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                     spellCheck={false}
                   />
                 </label>
-                <p className="text-xs font-semibold text-[#4d5d9f]">
+                <p className="text-xs text-muted-foreground">
                   Host browser token: {browserToken ? "available" : "missing"}.
                 </p>
                 <Button type="submit" variant="success">
                   Generate New Playlist Pack Version
                 </Button>
               </Form>
-            </CardContent>
-          </Card>
+            </div>
+          </GameCard>
         ) : null}
 
         {result ? (
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle>Result</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
+          <GameCard className="p-5">
+            <h3 className="text-lg font-bold text-card-foreground">Result</h3>
+            <div className="mt-3 space-y-2">
               <Badge variant={result.ok ? "success" : "warning"}>{result.ok ? "Success" : "Error"}</Badge>
-              <p className="text-sm font-semibold text-[#1f1f55]">{result.message}</p>
+              <p className="text-sm font-semibold text-card-foreground">{result.message}</p>
               {result.ok && result.mode === "generate-base-battery" ? (
-                <div className="grid gap-1 text-xs font-semibold text-[#4d5d9f]">
+                <div className="grid gap-1 text-xs text-muted-foreground">
                   <p>Version: {result.version}</p>
                   <p>File: {result.fileName}</p>
                   <p>Playlist: {result.playlistName} ({result.playlistId})</p>
@@ -377,7 +370,7 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                 </div>
               ) : null}
               {result.ok && result.mode === "generate-playlist-pack" ? (
-                <div className="grid gap-1 text-xs font-semibold text-[#4d5d9f]">
+                <div className="grid gap-1 text-xs text-muted-foreground">
                   <p>Version: {result.version}</p>
                   <p>File: {result.fileName}</p>
                   <p>Pack ID: {result.playlistId}</p>
@@ -387,10 +380,19 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                   <p>Rounds: {result.roundCount}</p>
                 </div>
               ) : null}
-            </CardContent>
-          </Card>
+            </div>
+          </GameCard>
         ) : null}
-      </section>
-    </main>
+
+        <div className="flex justify-center">
+          <Button asChild variant="outline">
+            <Link to="/">
+              <Home className="h-4 w-4" />
+              Home
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </GameLayout>
   );
 }

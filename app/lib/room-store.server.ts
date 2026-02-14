@@ -972,6 +972,48 @@ export function updateRoomGameSongCount(roomId: string, songCount: number): Stor
   return setStoredRoomState(roomId, nextState);
 }
 
+export function applyRoomLobbySetup(
+  roomId: string,
+  setup: { playlistIds: string[]; songCount: number },
+): StoredRoomState {
+  const base = ensureRoomState(roomId, { notifyOnPrune: false });
+  const sanitizedPlaylistIds = [
+    ...new Set(
+      setup.playlistIds
+        .filter((playlistId): playlistId is string => typeof playlistId === "string")
+        .map((playlistId) => playlistId.trim())
+        .filter((playlistId) => playlistId.length > 0),
+    ),
+  ];
+  const nextPlaylistIds = sanitizedPlaylistIds.length > 0 ? sanitizedPlaylistIds : [...defaultRoomPlaylistIds];
+  const requestedSongCount = parseGameSongCount(setup.songCount) ?? base.gameSongCount;
+  const { rounds, gameSongCount } = buildRoomRounds(nextPlaylistIds, requestedSongCount, {
+    preferredRoundIds: [],
+  });
+
+  const at = nowMs();
+  const nextState: StoredRoomState = {
+    ...base,
+    lifecycle: "lobby",
+    phase: "LISTEN",
+    roundIndex: 0,
+    phaseStartedAt: at,
+    phaseEndsAt: at,
+    guessSubmissions: {},
+    timelineSubmissions: {},
+    preloadReadiness: {},
+    playlistIds: nextPlaylistIds,
+    gameSongCount,
+    rounds,
+    timelineRoundIds: [],
+    scores: {},
+    roundBreakdowns: {},
+    updatedAt: at,
+  };
+
+  return setStoredRoomState(roomId, nextState);
+}
+
 export function subscribeToRoomState(roomId: string, listener: RoomStateListener) {
   const subscribers = roomSubscribers();
   const listeners = subscribers.get(roomId) ?? new Set<RoomStateListener>();
