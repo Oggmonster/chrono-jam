@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { Route } from "./+types/play-game";
 import { Link } from "react-router";
-import { ArrowDown, ArrowUp, CheckCircle2, Home, Minus, Music, TrendingUp, XCircle } from "lucide-react";
+import { CheckCircle2, Crown, Home, Music, Quote, Star, TrendingUp, Trophy, XCircle } from "lucide-react";
 
 import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { searchAutocomplete, type AutocompleteItem } from "~/lib/autocomplete";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
@@ -80,9 +80,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const [timelineHoverSlot, setTimelineHoverSlot] = useState<number | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
   const revealCardRef = useRef<HTMLDivElement | null>(null);
-  const preIntermissionRankingRef = useRef<Map<string, number>>(new Map());
-  const [intermissionMovementByPlayerId, setIntermissionMovementByPlayerId] = useState<Record<string, number>>({});
-  const [intermissionRevealReady, setIntermissionRevealReady] = useState(false);
   const [finalRevealReady, setFinalRevealReady] = useState(false);
 
   const progress = useMemo(() => {
@@ -119,7 +116,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const intermissionOpen = room.state.phase === "INTERMISSION";
   const finishedGame = room.state.lifecycle === "finished";
   const intermissionRoundNumber = room.state.roundIndex + 1;
-  const showIntermissionStandings = intermissionOpen && intermissionRoundNumber % 3 === 0;
   const intermissionQuote = useMemo(
     () => pickMusicQuote(`${roomId}:${room.state.phaseStartedAt}:${intermissionRoundNumber}`),
     [intermissionRoundNumber, room.state.phaseStartedAt, roomId],
@@ -248,47 +244,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       block: "start",
     });
   }, [intermissionOpen, revealOpen, room.round.id]);
-
-  useEffect(() => {
-    if (room.state.phase === "INTERMISSION") {
-      return;
-    }
-
-    preIntermissionRankingRef.current = new Map(
-      leaderboard.map((entry, index) => [entry.id, index] as const),
-    );
-  }, [leaderboard, room.state.phase]);
-
-  useEffect(() => {
-    if (room.state.phase !== "INTERMISSION") {
-      setIntermissionMovementByPlayerId({});
-      setIntermissionRevealReady(false);
-      return;
-    }
-    if (!showIntermissionStandings) {
-      setIntermissionMovementByPlayerId({});
-      setIntermissionRevealReady(false);
-      return;
-    }
-
-    const previousRanking = preIntermissionRankingRef.current;
-    const nextMovement = Object.fromEntries(
-      leaderboard.map((entry, index) => {
-        const previousIndex = previousRanking.get(entry.id);
-        return [entry.id, typeof previousIndex === "number" ? previousIndex - index : 0] as const;
-      }),
-    ) as Record<string, number>;
-
-    setIntermissionMovementByPlayerId(nextMovement);
-    setIntermissionRevealReady(false);
-    const timer = window.setTimeout(() => {
-      setIntermissionRevealReady(true);
-    }, 40);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [leaderboard, room.state.phase, room.state.phaseStartedAt, showIntermissionStandings]);
 
   useEffect(() => {
     if (!finishedGame) {
@@ -447,7 +402,9 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       points: playerBreakdown?.points.timeline ?? 0,
     },
   ];
-  const layoutWidthClass = room.state.phase === "REVEAL" ? "max-w-lg" : "max-w-3xl";
+  const intermissionCompactView = intermissionOpen;
+  const layoutWidthClass = room.state.phase === "REVEAL" || intermissionCompactView || finishedGame ? "max-w-lg" : "max-w-3xl";
+  const winnerScore = leaderboard[0]?.score ?? currentScore;
 
   return (
     <GameLayout className={`mx-auto ${layoutWidthClass}`}>
@@ -457,12 +414,95 @@ export default function PlayGame({ params }: Route.ComponentProps) {
             <Badge variant="listening">Round {room.state.roundIndex + 1}</Badge>
             <Badge variant="default">Score {currentScore}</Badge>
           </div>
-          <Badge variant={room.state.phase === "LISTEN" ? "warning" : room.state.phase === "REVEAL" ? "success" : "warning"}>
-            {phaseLabel(room.state.phase)}
+          <Badge variant={finishedGame ? "danger" : room.state.phase === "LISTEN" ? "warning" : room.state.phase === "REVEAL" ? "success" : "warning"}>
+            {finishedGame ? "Final" : phaseLabel(room.state.phase)}
           </Badge>
         </div>
 
-        {room.state.phase === "REVEAL" ? (
+        {finishedGame ? (
+          <>
+            <GameCard className="relative overflow-hidden border-[hsl(var(--primary)/0.25)] p-8 text-center">
+              <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <span
+                    key={`confetti-${i}`}
+                    className="absolute h-2 w-2 animate-float rounded-full"
+                    style={{
+                      left: `${8 + (i * 5.5) % 84}%`,
+                      top: `${4 + (i * 9) % 70}%`,
+                      backgroundColor: ["hsl(4 80% 62%)", "hsl(174 60% 42%)", "hsl(45 95% 52%)", "hsl(200 75% 50%)", "hsl(262 50% 58%)"][i % 5],
+                      animationDelay: `${i * 0.15}s`,
+                      opacity: 0.5,
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="relative z-10 flex flex-col items-center gap-4">
+                <CatMascot variant="celebrate" size="lg" className="animate-bounce-in" />
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[hsl(var(--primary)/0.1)]">
+                  <Trophy className="h-8 w-8 text-[hsl(var(--primary))]" />
+                </div>
+                <div>
+                  <p className="mb-1 text-sm font-semibold uppercase tracking-widest text-muted-foreground">Game Complete</p>
+                  <h2 className="text-balance text-3xl font-bold text-card-foreground">Final Standings</h2>
+                </div>
+              </div>
+            </GameCard>
+
+            <GameCard className="p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-[hsl(var(--primary))]" />
+                <p className="text-sm font-bold text-card-foreground">Final Standings</p>
+              </div>
+              <p className="mb-4 text-xs text-muted-foreground">Revealing from the bottom to the top.</p>
+              <ol className="space-y-2">
+                {leaderboard.map((entry, index) => {
+                  const isWinner = index === 0;
+                  return (
+                    <li
+                      key={entry.id}
+                      className={`flex items-center gap-3 rounded-xl border p-3 transition-all duration-500 ${
+                        isWinner
+                          ? "border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] shadow-md shadow-[hsl(var(--primary)/0.1)]"
+                          : "border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.4)]"
+                      } ${finalRevealReady ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"}`}
+                      style={{ transitionDelay: `${(leaderboard.length - 1 - index) * 140}ms` }}
+                    >
+                      <div className="flex w-8 items-center justify-center">
+                        {index === 0 ? (
+                          <Crown className="h-6 w-6 text-[hsl(var(--primary))]" />
+                        ) : index === 1 ? (
+                          <Star className="h-5 w-5 text-[hsl(45_95%_52%)]" />
+                        ) : (
+                          <span className="text-sm font-bold text-muted-foreground">#{index + 1}</span>
+                        )}
+                      </div>
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold ${
+                        isWinner
+                          ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                          : "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]"
+                      }`}>
+                        {entry.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="flex-1 font-bold text-card-foreground">{entry.name}</span>
+                      <span className={`font-mono text-xl font-bold ${isWinner ? "text-[hsl(var(--primary))]" : "text-card-foreground"}`}>
+                        {entry.score.toLocaleString()}
+                      </span>
+                    </li>
+                  );
+                })}
+                {leaderboard.length === 0 ? (
+                  <li className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.4)] px-3 py-2 text-xs font-semibold text-muted-foreground">
+                    No players to rank.
+                  </li>
+                ) : null}
+              </ol>
+              <div className="mt-4 rounded-xl border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.08)] px-4 py-2">
+                <p className="text-sm font-bold text-[hsl(var(--primary))]">Winning score: {winnerScore}</p>
+              </div>
+            </GameCard>
+          </>
+        ) : room.state.phase === "REVEAL" ? (
           <>
             <GameCard className="relative overflow-hidden border-accent/30 p-6">
               <div className="absolute inset-x-0 top-0 h-1 bg-[hsl(var(--accent))]" />
@@ -536,6 +576,42 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               )}
             </GameCard>
           </>
+        ) : intermissionCompactView ? (
+          <Card>
+            <CardContent className="space-y-6 p-8 text-center">
+              <div className="flex flex-col items-center gap-6">
+                <CatMascot variant="chill" size="lg" className="animate-float" />
+
+                <div>
+                  <p className="text-xl font-bold text-card-foreground">Intermission</p>
+                  <p className="text-sm text-muted-foreground">Quick vibe check before the next song</p>
+                </div>
+
+                <Equalizer className="h-8" />
+
+                <div className="flex items-center justify-center">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)]">
+                    <span className="animate-count-pulse font-mono text-3xl font-bold text-[hsl(var(--primary))]">
+                      {remainingSeconds}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="relative max-w-sm rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)] p-4">
+                  <div className="absolute -top-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-l border-t border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)]" />
+                  <div className="relative">
+                    <Quote className="absolute -left-0.5 -top-0.5 h-4 w-4 text-[hsl(var(--primary)/0.4)]" />
+                    <p className="pl-5 text-sm italic leading-relaxed text-card-foreground">
+                      {`"${intermissionQuote}"`}
+                    </p>
+                    <p className="mt-2 pl-5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Cat Wisdom
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardContent className="space-y-4 pt-4">
@@ -551,13 +627,9 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 {intermissionOpen ? (
                   <>
                     <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Intermission</p>
-                    <p className="font-bold">
-                      {showIntermissionStandings ? "Standings update in progress" : "Music break"}
-                    </p>
+                    <p className="font-bold">Music break</p>
                     <p className="text-sm">
-                      {showIntermissionStandings
-                        ? "Get ready for the next round."
-                        : "Quick vibe check before the next song."}
+                      Quick vibe check before the next song.
                     </p>
                   </>
                 ) : (
@@ -574,116 +646,12 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   </div>
                 )}
               </div>
-            {showIntermissionStandings ? (
-              <div className="rounded-2xl border-2 border-[#29459c] bg-[#f4f7ff] p-3">
-                <p className="text-sm font-bold text-[#243a84]">Current top list</p>
-                <ol className="mt-2 space-y-2">
-                  {leaderboard.map((entry, index) => {
-                    const movement = intermissionMovementByPlayerId[entry.id] ?? 0;
-                    const movementBadge =
-                      movement > 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#ddffec] px-2 py-0.5 text-xs font-bold text-[#1b8a4c]">
-                          <ArrowUp className="h-3.5 w-3.5" />
-                          {movement}
-                        </span>
-                      ) : movement < 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#ffe4e1] px-2 py-0.5 text-xs font-bold text-[#b24135]">
-                          <ArrowDown className="h-3.5 w-3.5" />
-                          {Math.abs(movement)}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[#edf1ff] px-2 py-0.5 text-xs font-bold text-[#4b5f9f]">
-                          <Minus className="h-3.5 w-3.5" />
-                          0
-                        </span>
-                      );
-
-                    return (
-                      <li
-                        key={entry.id}
-                        className={`flex items-center justify-between rounded-xl border-2 px-3 py-2 transition-all duration-500 ${
-                          entry.id === playerSession?.id
-                            ? "border-[#1f8f3f] bg-[#e9ffe0]"
-                            : "border-[#cad8ff] bg-white"
-                        } ${
-                          intermissionRevealReady
-                            ? "translate-y-0 opacity-100"
-                            : movement > 0
-                              ? "translate-y-3 opacity-0"
-                              : movement < 0
-                                ? "-translate-y-3 opacity-0"
-                                : "opacity-0"
-                        }`}
-                        style={{
-                          transitionDelay: `${index * 90}ms`,
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-extrabold text-[#243a84]">#{index + 1}</span>
-                          <span className="text-sm font-bold text-[#223f94]">{entry.name}</span>
-                          {movementBadge}
-                        </div>
-                        <span className="text-sm font-extrabold text-[#2d2a77]">{entry.score}</span>
-                      </li>
-                    );
-                  })}
-                  {leaderboard.length === 0 ? (
-                    <li className="rounded-xl border-2 border-[#cad8ff] bg-white px-3 py-2 text-xs font-semibold text-[#5f6ea9]">
-                      Waiting for players.
-                    </li>
-                  ) : null}
-                </ol>
-              </div>
-            ) : null}
-            {intermissionOpen && !showIntermissionStandings ? (
-              <div className="rounded-2xl border-2 border-[#29459c] bg-[#f4f7ff] p-4">
-                <p className="text-xs font-bold uppercase tracking-wide text-[#4f5fa2]">Now playing wisdom</p>
-                <p className="mt-2 text-lg font-bold text-[#243a84]">"{intermissionQuote}"</p>
-              </div>
-            ) : null}
-
             <TimerBar
               key={`${room.state.phase}:${room.state.phaseStartedAt}`}
               progress={progress}
               seconds={remainingSeconds}
               variant={timerVariant}
             />
-
-            {finishedGame ? (
-              <div className="rounded-2xl border-2 border-[#29459c] bg-[#f8f3ff] p-3">
-                <p className="text-sm font-bold text-[#243a84]">Final standings</p>
-                <p className="text-xs font-semibold text-[#4f5fa2]">
-                  Revealing from the bottom to the top.
-                </p>
-                <ol className="mt-3 space-y-2">
-                  {leaderboard.map((entry, index) => (
-                    <li
-                      key={entry.id}
-                      className={`flex items-center justify-between rounded-xl border-2 px-3 py-2 transition-all duration-500 ${
-                        entry.id === playerSession?.id
-                          ? "border-[#1f8f3f] bg-[#e9ffe0]"
-                          : "border-[#cab8ff] bg-white"
-                      } ${
-                        finalRevealReady ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
-                      }`}
-                      style={{
-                        transitionDelay: `${(leaderboard.length - 1 - index) * 140}ms`,
-                      }}
-                    >
-                      <span className="text-sm font-extrabold text-[#243a84]">
-                        #{index + 1} {entry.name}
-                      </span>
-                      <span className="text-sm font-extrabold text-[#2d2a77]">{entry.score}</span>
-                    </li>
-                  ))}
-                  {leaderboard.length === 0 ? (
-                    <li className="rounded-xl border-2 border-[#cab8ff] bg-white px-3 py-2 text-xs font-semibold text-[#5f6ea9]">
-                      No players to rank.
-                    </li>
-                  ) : null}
-                </ol>
-              </div>
-            ) : null}
 
             {room.state.phase === "LISTEN" ? (
               <>
