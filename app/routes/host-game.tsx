@@ -185,7 +185,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
   ]);
 
   useEffect(() => {
-    if (room.state.lifecycle === "running" && room.state.phase === "LISTEN") {
+    if (room.state.lifecycle === "running") {
       return;
     }
 
@@ -194,7 +194,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
     }
 
     void spotify.pause();
-  }, [room.state.lifecycle, room.state.phase, spotify]);
+  }, [room.state.lifecycle, spotify]);
 
   const saveToken = () => {
     if (typeof window === "undefined") {

@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api-room";
 import {
+  applyRoomLobbySetup,
   getRoomState,
   removeParticipant,
   replaceRoomState,
@@ -39,6 +40,13 @@ type RoomCommand =
   | {
       type: "update_game_song_count";
       songCount: number;
+    }
+  | {
+      type: "apply_lobby_setup";
+      setup: {
+        playlistIds: string[];
+        songCount: number;
+      };
     };
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -131,6 +139,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         return new Response("Invalid game song count payload", { status: 400 });
       }
       return Response.json(updateRoomGameSongCount(roomId, command.songCount));
+    }
+    case "apply_lobby_setup": {
+      const setup = command.setup;
+      if (
+        !setup ||
+        !Array.isArray(setup.playlistIds) ||
+        typeof setup.songCount !== "number"
+      ) {
+        return new Response("Invalid lobby setup payload", { status: 400 });
+      }
+      return Response.json(applyRoomLobbySetup(roomId, setup));
     }
     default:
       return new Response("Unsupported command", { status: 400 });

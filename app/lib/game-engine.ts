@@ -119,6 +119,13 @@ type RoomCommand =
   | {
       type: "update_game_song_count";
       songCount: number;
+    }
+  | {
+      type: "apply_lobby_setup";
+      setup: {
+        playlistIds: string[];
+        songCount: number;
+      };
     };
 
 type RoomHookResult = {
@@ -146,6 +153,7 @@ type RoomHookResult = {
     ) => void;
     updatePlaylistIds: (playlistIds: string[]) => void;
     updateGameSongCount: (songCount: number) => void;
+    applyLobbySetup: (setup: { playlistIds: string[]; songCount: number }) => void;
   };
 };
 
@@ -806,6 +814,45 @@ function updateGameSongCountInState(roomState: RoomState, songCount: number) {
   };
 }
 
+function applyLobbySetupInState(
+  roomState: RoomState,
+  setup: { playlistIds: string[]; songCount: number },
+  at = nowMs(),
+): RoomState {
+  const sanitizedPlaylistIds = [
+    ...new Set(
+      setup.playlistIds
+        .map((playlistId) => playlistId.trim())
+        .filter((playlistId) => playlistId.length > 0),
+    ),
+  ];
+  const nextPlaylistIds = sanitizedPlaylistIds.length > 0 ? sanitizedPlaylistIds : [...defaultPlaylistIds];
+  const parsedSongCount = parseGameSongCount(setup.songCount);
+  const nextGameSongCount = clampGameSongCount(
+    parsedSongCount ?? roomState.gameSongCount,
+    roomState.rounds.length,
+    defaultGameSongCount,
+  );
+
+  return {
+    ...roomState,
+    lifecycle: "lobby",
+    phase: "LISTEN",
+    roundIndex: 0,
+    phaseStartedAt: at,
+    phaseEndsAt: at,
+    guessSubmissions: {},
+    timelineSubmissions: {},
+    preloadReadiness: {},
+    playlistIds: nextPlaylistIds,
+    gameSongCount: nextGameSongCount,
+    timelineRoundIds: [],
+    scores: {},
+    roundBreakdowns: {},
+    updatedAt: at,
+  };
+}
+
 function getActiveRound(state: RoomState) {
   const rounds = state.rounds.length > 0 ? state.rounds : fallbackRounds();
   return rounds[Math.min(state.roundIndex, rounds.length - 1)]!;
@@ -1117,6 +1164,26 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
           .catch(() => {
             // Best-effort in local dev.
           });
+      },
+      applyLobbySetup: (setup: { playlistIds: string[]; songCount: number }) => {
+        if (role !== "host") {
+          return;
+        }
+
+        setState((prevState) => {
+          const nextState = applyLobbySetupInState(prevState, setup);
+          void postRoomCommand(roomId, {
+            type: "apply_lobby_setup",
+            setup,
+          })
+            .then((remote) => {
+              syncRemoteIfNewer(remote);
+            })
+            .catch(() => {
+              // Best-effort in local dev.
+            });
+          return nextState;
+        });
       },
     }),
     [role, roomId, sendStateToServer, syncRemoteIfNewer],
