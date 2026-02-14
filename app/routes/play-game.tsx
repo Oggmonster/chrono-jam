@@ -30,19 +30,6 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Game" }];
 }
 
-function phaseInstruction(phase: string) {
-  switch (phase) {
-    case "LISTEN":
-      return "Listen and lock your guess quickly for higher points.";
-    case "REVEAL":
-      return "Review the correct answer and point awards.";
-    case "INTERMISSION":
-      return "Next round is about to start.";
-    default:
-      return "Get ready for the next round.";
-  }
-}
-
 export default function PlayGame({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const room = useRoomState(roomId, "player");
@@ -440,16 +427,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const timelinePositionLabel =
     timelineDisplayInsertIndex === null ? null : timelineSlotLabel(timelineEntries, timelineDisplayInsertIndex);
 
-  const nudgeTimeline = (delta: number) => {
-    if (!canSubmitTimeline) {
-      return;
-    }
-
-    const baseIndex = timelineDisplayInsertIndex ?? timelineEntries.length;
-    const nextIndex = clampTimelineInsertIndex(baseIndex + delta, timelineEntries.length);
-    submitTimeline(nextIndex);
-    setTimelineHoverSlot(nextIndex);
-  };
   const revealRows = [
     {
       id: "track",
@@ -561,12 +538,16 @@ export default function PlayGame({ params }: Route.ComponentProps) {
           </>
         ) : (
           <Card>
-            <CardHeader>
-              <CardTitle>{phaseLabel(room.state.phase)} Phase</CardTitle>
-              <CardDescription>{phaseInstruction(room.state.phase)}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]" role="status" aria-live="polite">
+            <CardContent className="space-y-4 pt-4">
+              <div
+                className={
+                  room.state.phase === "LISTEN"
+                    ? "rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.35)] p-4 text-card-foreground"
+                    : "rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]"
+                }
+                role="status"
+                aria-live="polite"
+              >
                 {intermissionOpen ? (
                   <>
                     <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Intermission</p>
@@ -587,8 +568,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                         <Equalizer />
                         <span className="text-sm font-semibold text-card-foreground">Now Listening...</span>
                       </div>
-                      <p className="text-sm">Answer hidden until reveal</p>
-                      <p className="text-xs">Use autocomplete to lock your guess in this phase.</p>
+                      <p className="text-sm text-muted-foreground">Answer hidden until reveal</p>
+                      <p className="text-xs text-muted-foreground">Use autocomplete to lock your guess in this phase.</p>
                     </div>
                   </div>
                 )}
@@ -707,144 +688,155 @@ export default function PlayGame({ params }: Route.ComponentProps) {
             {room.state.phase === "LISTEN" ? (
               <>
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="grid gap-2 text-sm font-bold text-[#32277e]">
+              <div className="grid gap-2 text-sm font-bold text-card-foreground">
                 <label htmlFor="track-guess-input">Song title</label>
-                <Input
-                  id="track-guess-input"
-                  placeholder="Type at least 2 chars"
-                  value={displayedTrackQuery}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setTrackQuery(nextValue);
-                    setSelectedTrack(null);
-                  }}
-                  onFocus={() => {
-                    setTrackInputFocused(true);
-                  }}
-                  onBlur={() => {
-                    window.setTimeout(() => {
-                      setTrackInputFocused(false);
-                    }, 120);
-                  }}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  inputMode="search"
-                  aria-autocomplete="list"
-                  aria-controls="track-guess-listbox"
-                  aria-expanded={
-                    canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2
-                  }
-                  disabled={!canEditGuess}
-                />
-                {selectedTrack && !intermissionOpen ? (
-                  <span className="text-xs font-semibold text-[#22438f]">Selected: {selectedTrack.display}</span>
-                ) : null}
-                {canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2 ? (
-                  <ul
-                    id="track-guess-listbox"
-                    role="listbox"
-                    className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90"
-                  >
-                    {trackSuggestions.map((suggestion) => (
-                      <li key={suggestion.id} className="border-b border-[#cad8ff] last:border-b-0">
-                        <button
-                          type="button"
-                          role="option"
-                          className="w-full px-3 py-2 text-left text-sm font-semibold text-[#223f94] hover:bg-[#eef4ff]"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                          }}
-                          onClick={() => {
-                            setSelectedTrack(suggestion);
-                            setTrackQuery(suggestion.display);
-                            setTrackInputFocused(false);
-                          }}
-                        >
-                          {suggestion.display}
-                        </button>
-                      </li>
-                    ))}
-                    {trackSuggestions.length === 0 ? (
-                      <li className="px-3 py-2 text-xs font-semibold text-[#6558a8]">No matches found.</li>
-                    ) : null}
-                  </ul>
-                ) : null}
+                <div className="relative z-20">
+                  <Input
+                    id="track-guess-input"
+                    placeholder="Type at least 2 chars"
+                    className="h-11 border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-card-foreground placeholder:text-muted-foreground"
+                    value={displayedTrackQuery}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setTrackQuery(nextValue);
+                      setSelectedTrack(null);
+                    }}
+                    onFocus={() => {
+                      setTrackInputFocused(true);
+                    }}
+                    onBlur={() => {
+                      window.setTimeout(() => {
+                        setTrackInputFocused(false);
+                      }, 120);
+                    }}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    inputMode="search"
+                    aria-autocomplete="list"
+                    aria-controls="track-guess-listbox"
+                    aria-expanded={
+                      canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2
+                    }
+                    disabled={!canEditGuess}
+                  />
+                  {canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2 ? (
+                    <ul
+                      id="track-guess-listbox"
+                      role="listbox"
+                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-40 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
+                    >
+                      {trackSuggestions.map((suggestion) => (
+                        <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">
+                          <button
+                            type="button"
+                            role="option"
+                            className="w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                            }}
+                            onClick={() => {
+                              setSelectedTrack(suggestion);
+                              setTrackQuery(suggestion.display);
+                              setTrackInputFocused(false);
+                            }}
+                          >
+                            {suggestion.display}
+                          </button>
+                        </li>
+                      ))}
+                      {trackSuggestions.length === 0 ? (
+                        <li className="px-3 py-2 text-xs font-semibold text-muted-foreground">No matches found.</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </div>
+                <p className="min-h-4 text-xs font-semibold text-muted-foreground">
+                  {selectedTrack && !intermissionOpen ? `Selected: ${selectedTrack.display}` : ""}
+                </p>
               </div>
-              <div className="grid gap-2 text-sm font-bold text-[#32277e]">
+              <div className="grid gap-2 text-sm font-bold text-card-foreground">
                 <label htmlFor="artist-guess-input">Artist</label>
-                <Input
-                  id="artist-guess-input"
-                  placeholder="Type at least 2 chars"
-                  value={displayedArtistQuery}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setArtistQuery(nextValue);
-                    setSelectedArtist(null);
-                  }}
-                  onFocus={() => {
-                    setArtistInputFocused(true);
-                  }}
-                  onBlur={() => {
-                    window.setTimeout(() => {
-                      setArtistInputFocused(false);
-                    }, 120);
-                  }}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  inputMode="search"
-                  aria-autocomplete="list"
-                  aria-controls="artist-guess-listbox"
-                  aria-expanded={
-                    canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2
-                  }
-                  disabled={!canEditGuess}
-                />
-                {selectedArtist && !intermissionOpen ? (
-                  <span className="text-xs font-semibold text-[#22438f]">Selected: {selectedArtist.display}</span>
-                ) : null}
-                {canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2 ? (
-                  <ul
-                    id="artist-guess-listbox"
-                    role="listbox"
-                    className="max-h-40 overflow-y-auto rounded-xl border-2 border-[#2f4eb8] bg-white/90"
-                  >
-                    {artistSuggestions.map((suggestion) => (
-                      <li key={suggestion.id} className="border-b border-[#cad8ff] last:border-b-0">
-                        <button
-                          type="button"
-                          role="option"
-                          className="w-full px-3 py-2 text-left text-sm font-semibold text-[#223f94] hover:bg-[#eef4ff]"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                          }}
-                          onClick={() => {
-                            setSelectedArtist(suggestion);
-                            setArtistQuery(suggestion.display);
-                            setArtistInputFocused(false);
-                          }}
-                        >
-                          {suggestion.display}
-                        </button>
-                      </li>
-                    ))}
-                    {artistSuggestions.length === 0 ? (
-                      <li className="px-3 py-2 text-xs font-semibold text-[#6558a8]">No matches found.</li>
-                    ) : null}
-                  </ul>
-                ) : null}
+                <div className="relative z-20">
+                  <Input
+                    id="artist-guess-input"
+                    placeholder="Type at least 2 chars"
+                    className="h-11 border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-card-foreground placeholder:text-muted-foreground"
+                    value={displayedArtistQuery}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setArtistQuery(nextValue);
+                      setSelectedArtist(null);
+                    }}
+                    onFocus={() => {
+                      setArtistInputFocused(true);
+                    }}
+                    onBlur={() => {
+                      window.setTimeout(() => {
+                        setArtistInputFocused(false);
+                      }, 120);
+                    }}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    inputMode="search"
+                    aria-autocomplete="list"
+                    aria-controls="artist-guess-listbox"
+                    aria-expanded={
+                      canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2
+                    }
+                    disabled={!canEditGuess}
+                  />
+                  {canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2 ? (
+                    <ul
+                      id="artist-guess-listbox"
+                      role="listbox"
+                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-40 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
+                    >
+                      {artistSuggestions.map((suggestion) => (
+                        <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">
+                          <button
+                            type="button"
+                            role="option"
+                            className="w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                            }}
+                            onClick={() => {
+                              setSelectedArtist(suggestion);
+                              setArtistQuery(suggestion.display);
+                              setArtistInputFocused(false);
+                            }}
+                          >
+                            {suggestion.display}
+                          </button>
+                        </li>
+                      ))}
+                      {artistSuggestions.length === 0 ? (
+                        <li className="px-3 py-2 text-xs font-semibold text-muted-foreground">No matches found.</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </div>
+                <p className="min-h-4 text-xs font-semibold text-muted-foreground">
+                  {selectedArtist && !intermissionOpen ? `Selected: ${selectedArtist.display}` : ""}
+                </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={submitGuess} disabled={!canSubmitGuess}>
+              <Button
+                className="h-10 px-6 font-bold shadow-md shadow-[hsl(var(--primary)/0.2)]"
+                onClick={submitGuess}
+                disabled={!canSubmitGuess}
+              >
                 Lock Guess
               </Button>
               <Button
                 variant="outline"
+                className="h-10 border-[hsl(var(--input))] bg-card text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
                 onClick={() => {
                   setSelectedTrack(null);
                   setTrackQuery("");
@@ -869,29 +861,19 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               ) : null}
             </div>
 
-            <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#f7fbff] p-3">
-              <p className="text-sm font-bold text-[#223f94]">Timeline placement</p>
-              <p className="text-xs font-semibold text-[#4d5d9f]">
+            <div className="rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.35)] p-3">
+              <p className="text-sm font-bold text-card-foreground">Timeline placement</p>
+              <p className="text-xs font-semibold text-muted-foreground">
                 {currentSubmission
                   ? "Drag the release year between items. You can keep moving it until the timer ends."
                   : "Lock your guess to unlock timeline placement."}
               </p>
               {currentSubmission ? (
-                <p className="mt-1 text-xs font-semibold text-[#3f4f93]" role="status" aria-live="polite">
+                <p className="mt-1 text-xs font-semibold text-muted-foreground" role="status" aria-live="polite">
                   Current position: {timelinePositionLabel ?? "Not placed"}
                 </p>
               ) : null}
-              {canSubmitTimeline ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => nudgeTimeline(-1)}>
-                    Move Earlier
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => nudgeTimeline(1)}>
-                    Move Later
-                  </Button>
-                </div>
-              ) : null}
-              <div className="mt-3 rounded-xl border-2 border-dashed border-[#6a7ec2] bg-white px-3 py-2">
+              <div className="mt-3 rounded-xl border-2 border-dashed border-[hsl(var(--input))] bg-[hsl(var(--card)/0.7)] px-3 py-2">
                 <div
                   draggable={canSubmitTimeline}
                   onDragStart={() => {
@@ -913,10 +895,10 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     setTimelineDragging(true);
                     setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
                   }}
-                  className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold text-[#223f94] ${
+                  className={`rounded-lg border px-3 py-2 text-sm font-bold ${
                     canSubmitTimeline
-                      ? "cursor-grab border-[#2f4eb8] bg-[#eaf1ff]"
-                      : "border-[#c4d1f3] bg-[#f3f7ff] text-[#6a78b0]"
+                      ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
+                      : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
                   }`}
                   aria-label="Release year marker"
                 >
@@ -974,12 +956,12 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                           setTimelineDragging(true);
                           setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
                         }}
-                        className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold ${
+                        className={`rounded-lg border px-3 py-2 text-sm font-bold ${
                           timelineDragging
-                            ? "border-dashed border-[#2f4eb8] bg-[#eaf1ff] text-[#223f94]"
+                            ? "border-dashed border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--primary)/0.05)] text-[hsl(var(--primary))]"
                             : canSubmitTimeline
-                              ? "cursor-grab border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
-                              : "border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                              ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
+                              : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
                         }`}
                       >
                         Release year
@@ -988,7 +970,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     <div
                       data-timeline-entry="true"
                       onDragOver={(event) => handleTimelineItemDragOver(event, index)}
-                      className="rounded-lg border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2 text-sm font-extrabold text-[#223f94]"
+                      className="rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.55)] px-3 py-2 text-sm font-bold text-card-foreground"
                     >
                       {timelineEntryLabel(entry)}
                     </div>
@@ -1017,12 +999,12 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                       setTimelineDragging(true);
                       setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
                     }}
-                    className={`rounded-lg border-2 px-3 py-2 text-sm font-extrabold ${
+                    className={`rounded-lg border px-3 py-2 text-sm font-bold ${
                       timelineDragging
-                        ? "border-dashed border-[#2f4eb8] bg-[#eaf1ff] text-[#223f94]"
+                        ? "border-dashed border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--primary)/0.05)] text-[hsl(var(--primary))]"
                         : canSubmitTimeline
-                          ? "cursor-grab border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
-                          : "border-[#1f8f3f] bg-[#dbffce] text-[#1f8f3f]"
+                          ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
+                          : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
                     }`}
                   >
                     Release year
