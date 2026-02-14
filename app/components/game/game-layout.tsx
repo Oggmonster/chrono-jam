@@ -162,14 +162,20 @@ export function Equalizer({ className }: { className?: string }) {
 export function TimerBar({
   progress,
   seconds,
+  variant = "default",
   className,
 }: {
   progress: number;
   seconds: number;
+  variant?: "default" | "warning" | "danger";
   className?: string;
 }) {
   const variantClass =
-    seconds <= 5 ? "bg-[hsl(var(--destructive))]" : seconds <= 10 ? "bg-[hsl(45_95%_52%)]" : "bg-[hsl(var(--accent))]";
+    variant === "danger"
+      ? "bg-[hsl(var(--destructive))]"
+      : variant === "warning"
+        ? "bg-[hsl(45_95%_52%)]"
+        : "bg-[hsl(var(--accent))]";
 
   return (
     <div className={cn("flex flex-col gap-1", className)}>

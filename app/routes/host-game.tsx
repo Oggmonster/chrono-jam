@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-game";
 import { Link } from "react-router";
-import { FastForward, Home, Pause, Play, Radio, RotateCcw, SkipForward, Wifi } from "lucide-react";
+import { FastForward, Home, Pause, Play, Radio, SkipForward, Wifi } from "lucide-react";
 
 import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -133,8 +133,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
       return 0;
     }
 
-    const elapsed = total - room.remainingMs;
-    return Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
+    return Math.max(0, Math.min(100, Math.round((room.remainingMs / total) * 100)));
   }, [room.remainingMs, room.state.lifecycle, room.state.phase]);
 
   useEffect(() => {
@@ -223,6 +222,14 @@ export default function HostGame({ params }: Route.ComponentProps) {
   };
 
   const remainingSeconds = Math.ceil(room.remainingMs / 1000);
+  const timerVariant: "default" | "warning" | "danger" =
+    room.state.phase !== "LISTEN"
+      ? "default"
+      : remainingSeconds <= 5
+        ? "danger"
+        : remainingSeconds <= 10
+          ? "warning"
+          : "default";
   const leaderboard = [...room.state.participants]
     .map((participant) => ({
       ...participant,
@@ -250,7 +257,12 @@ export default function HostGame({ params }: Route.ComponentProps) {
             <h3 className="font-bold text-card-foreground">Phase Timer</h3>
             <span className="text-xs font-mono text-muted-foreground">{`Open '/play/game/${roomId}' to verify sync`}</span>
           </div>
-          <TimerBar progress={progress} seconds={remainingSeconds} />
+          <TimerBar
+            key={`${room.state.phase}:${room.state.phaseStartedAt}`}
+            progress={progress}
+            seconds={remainingSeconds}
+            variant={timerVariant}
+          />
 
           <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4" role="status" aria-live="polite">
             {room.state.lifecycle === "running" && room.state.phase === "LISTEN" ? (
@@ -285,10 +297,6 @@ export default function HostGame({ params }: Route.ComponentProps) {
               <Button onClick={room.controls.skipPhase}>
                 <SkipForward className="h-4 w-4" />
                 Skip Phase
-              </Button>
-              <Button variant="outline" onClick={room.controls.resetLobby}>
-                <RotateCcw className="h-4 w-4" />
-                Reset
               </Button>
               <Button variant="outline" onClick={room.controls.syncState}>
                 <Wifi className="h-4 w-4" />

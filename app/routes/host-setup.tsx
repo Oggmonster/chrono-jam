@@ -407,30 +407,6 @@ export default function HostSetup() {
               </p>
             </div>
 
-            <details className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
-              <summary className="cursor-pointer font-semibold text-card-foreground">Advanced token override</summary>
-              <div className="mt-3 grid gap-3">
-                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
-                  Custom room code
-                  <Input
-                    value={roomCode}
-                    onChange={(event) => setRoomCode(event.target.value)}
-                    placeholder="e.g. 2321"
-                    maxLength={8}
-                  />
-                </label>
-                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
-                  Access token
-                  <Input
-                    type="password"
-                    value={token}
-                    onChange={(event) => setToken(event.target.value)}
-                    placeholder="Paste OAuth access token"
-                  />
-                </label>
-              </div>
-            </details>
-
             <div className="flex gap-3 pt-2">
               <Button type="submit" size="lg" className="h-12 flex-1" disabled={selectedPlaylistIds.length === 0}>
                 Continue to Lobby

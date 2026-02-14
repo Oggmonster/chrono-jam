@@ -104,10 +104,17 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     }
 
     const total = phaseDurations[room.state.phase];
-    const elapsed = total - room.remainingMs;
-
-    return Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
+    return Math.max(0, Math.min(100, Math.round((room.remainingMs / total) * 100)));
   }, [room.remainingMs, room.state.lifecycle, room.state.phase]);
+  const remainingSeconds = Math.ceil(room.remainingMs / 1000);
+  const timerVariant: "default" | "warning" | "danger" =
+    room.state.phase !== "LISTEN"
+      ? "default"
+      : remainingSeconds <= 5
+        ? "danger"
+        : remainingSeconds <= 10
+          ? "warning"
+          : "default";
 
   const submissionKey = playerSession ? `${playerSession.id}:${room.round.id}` : "";
   const timelineSubmissionKey = playerSession ? `${playerSession.id}:${room.round.id}` : "";
@@ -568,7 +575,12 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               </div>
             ) : null}
 
-            <TimerBar progress={progress} seconds={Math.ceil(room.remainingMs / 1000)} />
+            <TimerBar
+              key={`${room.state.phase}:${room.state.phaseStartedAt}`}
+              progress={progress}
+              seconds={remainingSeconds}
+              variant={timerVariant}
+            />
             {revealOpen && !finishedGame ? (
               <div
                 ref={revealCardRef}

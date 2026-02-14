@@ -129,7 +129,6 @@ type RoomHookResult = {
   controls: {
     startGame: () => void;
     skipPhase: () => void;
-    resetLobby: () => void;
     syncState: () => void;
     upsertParticipant: (participant: Pick<RoomParticipant, "id" | "name">) => void;
     removeParticipant: (participantId: string) => void;
@@ -975,7 +974,6 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
         if (role !== "host") {
           return;
         }
-
         setState((prevState) => {
           const nextState = advanceRoomPhase(prevState);
           if (nextState !== prevState) {
@@ -983,15 +981,6 @@ export function useRoomState(roomId: string, role: RoomRole): RoomHookResult {
           }
           return nextState;
         });
-      },
-      resetLobby: () => {
-        if (role !== "host") {
-          return;
-        }
-
-        const nextState = createLobbyState(roomId);
-        setState(nextState);
-        sendStateToServer(nextState);
       },
       syncState: () => {
         if (role !== "host") {

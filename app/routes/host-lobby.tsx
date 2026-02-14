@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-lobby";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { CheckCheck, Copy, Play, RotateCcw, Shield, Users, Wifi } from "lucide-react";
+import { CheckCheck, Copy, Play, Shield, Users, Wifi } from "lucide-react";
 
 import { CatMascot, GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -297,9 +297,6 @@ export default function HostLobby({ params }: Route.ComponentProps) {
               Force Start
             </Button>
           ) : null}
-          <Button variant="outline" onClick={room.controls.resetLobby}>
-            Reset Room
-          </Button>
         </div>
         {!canStartNormally ? (
           <p className="mt-2 text-center text-xs font-semibold text-[#8d2e2a]">
@@ -312,9 +309,6 @@ export default function HostLobby({ params }: Route.ComponentProps) {
         ) : null}
 
         <div className="flex flex-wrap justify-center gap-3">
-          <Button asChild variant="outline">
-            <Link to={`/play/lobby/${roomId}`}>Open Player Lobby</Link>
-          </Button>
           <Button asChild variant="outline">
             <Link to="/host/setup">Back To Setup</Link>
           </Button>
