@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { Route } from "./+types/play-game";
 import { Link } from "react-router";
-import { ArrowDown, ArrowUp, CheckCircle2, Home, Minus, XCircle } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, Home, Minus, Music, TrendingUp, XCircle } from "lucide-react";
 
-import { CatMascot, Equalizer, GameLayout, TimerBar } from "~/components/game/game-layout";
+import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
@@ -450,9 +450,30 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     submitTimeline(nextIndex);
     setTimelineHoverSlot(nextIndex);
   };
+  const revealRows = [
+    {
+      id: "track",
+      label: "Song title",
+      correct: Boolean(trackCorrect),
+      points: playerBreakdown?.points.track ?? 0,
+    },
+    {
+      id: "artist",
+      label: "Artist",
+      correct: Boolean(artistCorrect),
+      points: playerBreakdown?.points.artist ?? 0,
+    },
+    {
+      id: "timeline",
+      label: "Timeline",
+      correct: Boolean(playerBreakdown?.timelineCorrect),
+      points: playerBreakdown?.points.timeline ?? 0,
+    },
+  ];
+  const layoutWidthClass = room.state.phase === "REVEAL" ? "max-w-lg" : "max-w-3xl";
 
   return (
-    <GameLayout className="mx-auto max-w-3xl">
+    <GameLayout className={`mx-auto ${layoutWidthClass}`}>
       <div className="animate-slide-up flex flex-col gap-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -464,49 +485,114 @@ export default function PlayGame({ params }: Route.ComponentProps) {
           </Badge>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{phaseLabel(room.state.phase)} Phase</CardTitle>
-            <CardDescription>{phaseInstruction(room.state.phase)}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div
-              className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]"
-              role="status"
-              aria-live="polite"
-            >
-              {intermissionOpen ? (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Intermission</p>
-                  <p className="font-bold">
-                    {showIntermissionStandings ? "Standings update in progress" : "Music break"}
-                  </p>
-                  <p className="text-sm">
-                    {showIntermissionStandings
-                      ? "Get ready for the next round."
-                      : "Quick vibe check before the next song."}
-                  </p>
-                </>
-              ) : revealOpen ? (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">{room.round.title}</p>
-                  <p className="font-bold">{room.round.artist}</p>
-                  <p className="text-sm">Timeline answer: {room.round.year}</p>
-                </>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <CatMascot variant="thinking" size="sm" className="animate-wiggle" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Equalizer />
-                      <span className="text-sm font-semibold text-card-foreground">Now Listening...</span>
+        {room.state.phase === "REVEAL" ? (
+          <>
+            <GameCard className="relative overflow-hidden border-accent/30 p-6">
+              <div className="absolute inset-x-0 top-0 h-1 bg-[hsl(var(--accent))]" />
+              <div className="flex items-start gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/10">
+                  <Music className="h-7 w-7 text-[hsl(var(--accent))]" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-card-foreground">{room.round.title}</p>
+                  <p className="text-base font-semibold text-muted-foreground">{room.round.artist}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Released in {room.round.year}</p>
+                </div>
+              </div>
+            </GameCard>
+
+            <TimerBar
+              key={`${room.state.phase}:${room.state.phaseStartedAt}`}
+              progress={progress}
+              seconds={remainingSeconds}
+              variant="default"
+            />
+
+            <GameCard className="animate-slide-up p-5">
+              <div ref={revealCardRef}>
+                <p className="mb-4 text-sm font-bold text-card-foreground">Round Result</p>
+                <div className="stagger-children flex flex-col gap-2">
+                  {revealRows.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`flex items-center gap-3 rounded-xl border p-3 transition-all ${
+                        entry.correct
+                          ? "border-[hsl(155_65%_40%/0.25)] bg-[hsl(155_65%_40%/0.08)]"
+                          : "border-[hsl(var(--destructive)/0.25)] bg-[hsl(var(--destructive)/0.08)]"
+                      }`}
+                    >
+                      {entry.correct ? (
+                        <CheckCircle2 className="h-5 w-5 shrink-0 text-[#1f8f3f]" />
+                      ) : (
+                        <XCircle className="h-5 w-5 shrink-0 text-[hsl(var(--destructive))]" />
+                      )}
+                      <span className="flex-1 text-sm font-semibold text-card-foreground">
+                        {entry.label}
+                      </span>
+                      <span
+                        className={`font-mono text-sm font-bold ${
+                          entry.correct ? "text-[#1f8f3f]" : "text-[hsl(var(--destructive))]"
+                        }`}
+                      >
+                        {entry.correct ? `+${entry.points}` : "0"}
+                      </span>
                     </div>
-                    <p className="text-sm">Answer hidden until reveal</p>
-                    <p className="text-xs">Use autocomplete to lock your guess in this phase.</p>
+                  ))}
+                </div>
+              </div>
+            </GameCard>
+
+            <GameCard className="animate-slide-up p-5" style={{ animationDelay: "200ms" }}>
+              <p className="mb-3 text-sm font-bold text-card-foreground">Your Scoring</p>
+              {playerBreakdown ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 rounded-xl border border-[hsl(155_65%_40%/0.25)] bg-[hsl(155_65%_40%/0.08)] px-4 py-2">
+                    <TrendingUp className="h-4 w-4 text-[#1f8f3f]" />
+                    <span className="text-sm font-bold text-[#1f8f3f]">+{playerBreakdown.points.total}</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-xl border border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.08)] px-4 py-2">
+                    <span className="text-sm font-bold text-[hsl(var(--primary))]">Total: {currentScore}</span>
                   </div>
                 </div>
+              ) : (
+                <p className="text-xs font-semibold text-muted-foreground">No points awarded this round.</p>
               )}
-            </div>
+            </GameCard>
+          </>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>{phaseLabel(room.state.phase)} Phase</CardTitle>
+              <CardDescription>{phaseInstruction(room.state.phase)}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]" role="status" aria-live="polite">
+                {intermissionOpen ? (
+                  <>
+                    <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Intermission</p>
+                    <p className="font-bold">
+                      {showIntermissionStandings ? "Standings update in progress" : "Music break"}
+                    </p>
+                    <p className="text-sm">
+                      {showIntermissionStandings
+                        ? "Get ready for the next round."
+                        : "Quick vibe check before the next song."}
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <CatMascot variant="thinking" size="sm" className="animate-wiggle" />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Equalizer />
+                        <span className="text-sm font-semibold text-card-foreground">Now Listening...</span>
+                      </div>
+                      <p className="text-sm">Answer hidden until reveal</p>
+                      <p className="text-xs">Use autocomplete to lock your guess in this phase.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             {showIntermissionStandings ? (
               <div className="rounded-2xl border-2 border-[#29459c] bg-[#f4f7ff] p-3">
                 <p className="text-sm font-bold text-[#243a84]">Current top list</p>
@@ -581,69 +667,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               seconds={remainingSeconds}
               variant={timerVariant}
             />
-            {revealOpen && !finishedGame ? (
-              <div
-                ref={revealCardRef}
-                className="rounded-2xl border-2 border-[#29459c] bg-[#fff8dd] p-3"
-              >
-                <p className="text-sm font-bold text-[#243a84]">Round result</p>
-                <div className="mt-2 space-y-2">
-                  {[
-                    {
-                      id: "track",
-                      label: "Song title",
-                      correct: Boolean(trackCorrect),
-                      points: playerBreakdown?.points.track ?? 0,
-                    },
-                    {
-                      id: "artist",
-                      label: "Artist",
-                      correct: Boolean(artistCorrect),
-                      points: playerBreakdown?.points.artist ?? 0,
-                    },
-                    {
-                      id: "timeline",
-                      label: "Timeline",
-                      correct: Boolean(playerBreakdown?.timelineCorrect),
-                      points: playerBreakdown?.points.timeline ?? 0,
-                    },
-                  ].map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center justify-between rounded-lg border border-[#d4c47f] bg-white/70 px-3 py-2"
-                    >
-                      <span className="flex items-center gap-2 text-sm font-bold text-[#243a84]">
-                        {entry.correct ? (
-                          <CheckCircle2 className="h-4 w-4 text-[#1f8f3f]" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-[#b24135]" />
-                        )}
-                        {entry.label}
-                      </span>
-                      <span className="text-sm font-extrabold text-[#2d2a77]">
-                        {entry.correct ? `+${entry.points}` : "0"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {revealOpen && !finishedGame ? (
-              <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-3">
-                <p className="text-sm font-bold text-[#223f94]">Your scoring</p>
-                {playerBreakdown ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-[#1f1f55]">
-                    <Badge variant="success">Round +{playerBreakdown.points.total}</Badge>
-                    <Badge variant="default">Total {currentScore}</Badge>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs font-semibold text-[#4f5fa2]">
-                    No points awarded this round.
-                  </p>
-                )}
-              </div>
-            ) : null}
 
             {finishedGame ? (
               <div className="rounded-2xl border-2 border-[#29459c] bg-[#f8f3ff] p-3">
@@ -681,7 +704,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               </div>
             ) : null}
 
-            {!intermissionOpen && !finishedGame ? (
+            {room.state.phase === "LISTEN" ? (
               <>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-2 text-sm font-bold text-[#32277e]">
@@ -1012,6 +1035,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
 
           </CardContent>
         </Card>
+        )}
 
         <div className="flex flex-wrap justify-center gap-3">
           <Button asChild variant="outline">
