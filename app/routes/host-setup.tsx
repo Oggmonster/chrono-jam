@@ -1,11 +1,11 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import type { Route } from "./+types/host-setup";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { ArrowLeft, ArrowRight, Check, Link2, Music2, RefreshCw } from "lucide-react";
 
-import { Ribbon } from "~/components/ribbon";
+import { CatMascot, GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import {
   clampGameSongCount,
@@ -276,132 +276,176 @@ export default function HostSetup() {
   const connectHref = `/auth/spotify/start?${connectParams.toString()}`;
 
   return (
-    <main className="jam-page">
-      <section className="jam-stage w-full max-w-3xl">
-        <Ribbon>Host Setup</Ribbon>
+    <GameLayout className="mx-auto max-w-lg">
+      <div className="animate-slide-up flex flex-col items-center gap-6">
+        <CatMascot variant="default" size="sm" />
+        <div className="flex flex-col items-center gap-2">
+          <GameTitle className="text-2xl md:text-3xl">Host Setup</GameTitle>
+          <GameSubtitle>Configure your game room and playlist</GameSubtitle>
+        </div>
 
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Spotify Premium Host</CardTitle>
-            <CardDescription>
-              ChronoJam host playback uses the Spotify Web Playback SDK.
-            </CardDescription>
-            <Badge variant="warning" className="w-fit">
-              Required scopes: streaming, user-modify-playback-state, user-read-playback-state, playlist-read-private, playlist-read-collaborative
-            </Badge>
-            {statusText ? <Badge variant="success" className="w-fit">{statusText}</Badge> : null}
-          </CardHeader>
-
-          <CardContent>
-            <form className="grid gap-4" onSubmit={submit}>
-              <label className="grid gap-2 text-sm font-bold text-[#32277e]">
-                Room code
-                <Input
-                  value={roomCode}
-                  onChange={(event) => setRoomCode(event.target.value)}
-                  placeholder="8372"
-                  maxLength={8}
-                  required
-                />
-              </label>
-
-              <label className="grid gap-2 text-sm font-bold text-[#32277e]">
-                Spotify access token
-                <Input
-                  type="password"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                  placeholder="Paste OAuth access token"
-                />
-              </label>
-              <div className="grid gap-2 text-sm font-bold text-[#32277e]">
-                <p>Playlist packs</p>
-                <div className="grid gap-2 rounded-xl border-2 border-[#29459c] bg-[#eef4ff] p-3">
-                  {playlistEntries.map((entry) => (
-                    <label key={entry.id} className="flex items-center gap-2 text-sm font-semibold text-[#1f1f55]">
-                      <input
-                        type="checkbox"
-                        checked={selectedPlaylistIds.includes(entry.id)}
-                        onChange={(event) => {
-                          setSelectedPlaylistIds((current) => {
-                            const next = event.target.checked
-                              ? [...new Set([...current, entry.id])]
-                              : current.filter((id) => id !== entry.id);
-                            return next.length > 0 ? next : current;
-                          });
-                        }}
-                      />
-                      <span>
-                        {entry.name} ({entry.id}.v{entry.version}) | {entry.roundCount} songs
-                      </span>
-                    </label>
-                  ))}
+        <GameCard className="w-full p-6">
+          <form className="flex flex-col gap-6" onSubmit={submit}>
+            <div className="flex items-center justify-between rounded-xl border border-border bg-muted/40 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(var(--primary)/0.1)]">
+                  <Music2 className="h-5 w-5 text-[hsl(var(--primary))]" />
                 </div>
-                <p className="text-xs font-semibold text-[#4f5fa2]">
-                  Selected pack size: {selectedRoundCapacity} songs
-                </p>
-              </div>
-
-              <div className="grid gap-2 text-sm font-bold text-[#32277e]">
-                <p>Songs in this game</p>
-                <div className="grid gap-2 rounded-xl border-2 border-[#29459c] bg-[#eef4ff] p-3">
-                  <div className="flex flex-wrap gap-2">
-                    {gameSongCountPresets.map((preset) => (
-                      <Button
-                        key={preset}
-                        type="button"
-                        variant={requestedSongCount === preset ? "default" : "outline"}
-                        onClick={() => setRequestedSongCount(preset)}
-                        disabled={preset > selectedRoundCapacity}
-                      >
-                        {preset}
-                      </Button>
-                    ))}
-                  </div>
-                  <label className="grid gap-1 text-xs font-semibold text-[#1f1f55]">
-                    Custom
-                    <Input
-                      type="number"
-                      min={1}
-                      max={selectedRoundCapacity}
-                      step={1}
-                      value={requestedSongCount}
-                      onChange={(event) => {
-                        const parsed = parseGameSongCount(event.target.value);
-                        if (parsed === null) {
-                          return;
-                        }
-                        setRequestedSongCount(
-                          clampGameSongCount(parsed, selectedRoundCapacity, defaultGameSongCount),
-                        );
-                      }}
-                    />
-                  </label>
-                  <p className="text-xs font-semibold text-[#4f5fa2]">
-                    Using {selectedGameSongCount} songs (max {selectedRoundCapacity})
+                <div>
+                  <p className="text-sm font-semibold text-card-foreground">
+                    {token.trim() ? "Spotify Connected" : "Connect Spotify"}
                   </p>
+                  <p className="text-xs text-muted-foreground">Premium required for playback</p>
                 </div>
               </div>
-
-              <div className="mt-2 flex flex-wrap gap-3">
-                <Button asChild variant="default" size="lg">
-                  <a href={connectHref}>Connect Spotify</a>
+              <div className="flex items-center gap-2">
+                <Button asChild size="sm" className="bg-[hsl(155_65%_40%)] text-white hover:bg-[hsl(155_65%_40%/0.9)]">
+                  <a href={connectHref}>
+                    <Link2 className="h-3.5 w-3.5" />
+                    Connect
+                  </a>
                 </Button>
-                <Button type="button" variant="outline" onClick={refreshToken} disabled={refreshingToken}>
-                  {refreshingToken ? "Refreshing..." : "Refresh Token"}
-                </Button>
-                <Button type="submit" variant="success" size="lg">
-                  Continue To Lobby
-                </Button>
-                <Button asChild variant="secondary">
-                  <Link to="/">Back</Link>
+                <Button type="button" variant="outline" size="sm" onClick={refreshToken} disabled={refreshingToken}>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  {refreshingToken ? "Refreshing..." : "Refresh"}
                 </Button>
               </div>
-            </form>
-          </CardContent>
-        </Card>
-      </section>
-    </main>
+            </div>
+
+            {statusText ? <Badge variant="success" className="w-fit">{statusText}</Badge> : null}
+
+            <label className="flex flex-col gap-2 text-sm font-semibold text-card-foreground">
+              Room Code
+              <div className="flex h-12 items-center justify-center rounded-xl border border-border bg-muted/40">
+                <span className="font-mono text-2xl font-bold tracking-[0.3em] text-[hsl(var(--primary))]">
+                  {normalizeRoomCode(roomCode) || "----"}
+                </span>
+              </div>
+            </label>
+
+            <div className="flex flex-col gap-3">
+              <p className="text-sm font-semibold text-card-foreground">Playlist Packs</p>
+              <div className="flex flex-col gap-2">
+                {playlistEntries.map((entry) => {
+                  const selected = selectedPlaylistIds.includes(entry.id);
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedPlaylistIds((current) => {
+                          const next = selected
+                            ? current.filter((id) => id !== entry.id)
+                            : [...new Set([...current, entry.id])];
+                          return next.length > 0 ? next : current;
+                        });
+                      }}
+                      className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
+                        selected
+                          ? "border-[hsl(var(--primary)/0.35)] bg-[hsl(var(--primary)/0.08)]"
+                          : "border-border bg-muted/30"
+                      }`}
+                    >
+                      <div
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                          selected
+                            ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]"
+                            : "border-muted-foreground/40"
+                        }`}
+                      >
+                        {selected ? <Check className="h-3 w-3 text-[hsl(var(--primary-foreground))]" /> : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-card-foreground">{entry.name}</p>
+                        <p className="text-xs text-muted-foreground">{entry.roundCount} songs</p>
+                      </div>
+                      <Badge className="text-[10px]">{`v${entry.version}`}</Badge>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">Selected: {selectedRoundCapacity} songs available</p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <p className="text-sm font-semibold text-card-foreground">Songs per Game</p>
+              <div className="flex flex-wrap gap-2">
+                {gameSongCountPresets.map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant={requestedSongCount === preset ? "default" : "outline"}
+                    onClick={() => setRequestedSongCount(preset)}
+                    disabled={preset > selectedRoundCapacity}
+                    className={requestedSongCount === preset ? "shadow-md shadow-primary/20" : ""}
+                  >
+                    {preset}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Custom:</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={selectedRoundCapacity}
+                  step={1}
+                  value={requestedSongCount}
+                  onChange={(event) => {
+                    const parsed = parseGameSongCount(event.target.value);
+                    if (parsed === null) {
+                      return;
+                    }
+                    setRequestedSongCount(clampGameSongCount(parsed, selectedRoundCapacity, defaultGameSongCount));
+                  }}
+                  className="h-9 w-20 text-center"
+                />
+                <span>{`(max ${selectedRoundCapacity})`}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Using {selectedGameSongCount} songs (max {selectedRoundCapacity})
+              </p>
+            </div>
+
+            <details className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+              <summary className="cursor-pointer font-semibold text-card-foreground">Advanced token override</summary>
+              <div className="mt-3 grid gap-3">
+                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
+                  Custom room code
+                  <Input
+                    value={roomCode}
+                    onChange={(event) => setRoomCode(event.target.value)}
+                    placeholder="e.g. 2321"
+                    maxLength={8}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
+                  Access token
+                  <Input
+                    type="password"
+                    value={token}
+                    onChange={(event) => setToken(event.target.value)}
+                    placeholder="Paste OAuth access token"
+                  />
+                </label>
+              </div>
+            </details>
+
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" size="lg" className="h-12 flex-1" disabled={selectedPlaylistIds.length === 0}>
+                Continue to Lobby
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button asChild variant="outline" size="lg" className="h-12">
+                <Link to="/">
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </form>
+        </GameCard>
+      </div>
+    </GameLayout>
   );
 }
 

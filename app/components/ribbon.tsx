@@ -12,10 +12,10 @@ export function Ribbon({
   return (
     <h1
       className={cn(
-        "mx-auto w-fit max-w-full rounded-2xl border-4 px-5 py-2 text-center font-[var(--font-display)] text-[clamp(1.5rem,4vw,2.3rem)] uppercase tracking-wide text-[#ffeaa7] shadow-[0_8px_0_#5f194e]",
+        "mx-auto w-fit max-w-full rounded-full px-4 py-1 text-center text-xs font-bold uppercase tracking-wide",
         tone === "warm"
-          ? "border-[#5f194e] bg-[linear-gradient(180deg,#f05f54,#cf3446)]"
-          : "border-[#23267a] bg-[linear-gradient(180deg,#4f6bf5,#3b3dbd)] shadow-[0_8px_0_#23267a]",
+          ? "bg-[hsl(45_95%_52%)] text-[hsl(var(--foreground))]"
+          : "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]",
       )}
     >
       {children}

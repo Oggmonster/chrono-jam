@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-game";
 import { Link } from "react-router";
-import { FastForward, Play, Pause, Radio } from "lucide-react";
+import { FastForward, Home, Pause, Play, Radio, RotateCcw, SkipForward, Wifi } from "lucide-react";
 
-import { Ribbon } from "~/components/ribbon";
+import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { Progress } from "~/components/ui/progress";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import { useSpotifyHostPlayer } from "~/lib/spotify-host";
 import {
@@ -233,167 +231,173 @@ export default function HostGame({ params }: Route.ComponentProps) {
     .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
 
   return (
-    <main className="jam-page">
-      <section className="jam-stage w-full max-w-6xl">
-        <Ribbon>Host Control Board</Ribbon>
-
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          <Badge>{room.state.lifecycle.toUpperCase()}</Badge>
-          <Badge variant="warning">
-            Round {room.state.roundIndex + 1}/{room.state.rounds.length}
-          </Badge>
-          <Badge variant={room.state.phase === "LISTEN" ? "success" : "default"}>
-            {phaseLabel(room.state.phase)}
-          </Badge>
+    <GameLayout className="mx-auto max-w-3xl">
+      <div className="animate-slide-up flex flex-col gap-5">
+        <div className="flex items-center justify-between">
+          <Badge variant="warning">Host Control</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="listening">
+              {`Round ${room.state.roundIndex + 1}/${room.state.rounds.length}`}
+            </Badge>
+            <Badge variant={room.state.phase === "LISTEN" ? "info" : room.state.phase === "REVEAL" ? "success" : "warning"}>
+              {phaseLabel(room.state.phase)}
+            </Badge>
+          </div>
         </div>
 
-        <Card className="mt-5">
-          <CardHeader>
-            <CardTitle>Phase Timer</CardTitle>
-            <CardDescription>
-              Host is authoritative. Open `/play/game/{roomId}` in another tab to verify synchronization.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Progress value={progress} aria-label="Round phase progress" />
-            <div className="flex items-center justify-between text-sm font-bold text-[#2d2a77]">
-              <span>{phaseLabel(room.state.phase)}</span>
-              <span role="status" aria-live="polite">
-                {room.state.lifecycle === "running" ? `${remainingSeconds}s` : "idle"}
-              </span>
-            </div>
-            <div
-              className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-4 text-[#1f1f55]"
-              role="status"
-              aria-live="polite"
-            >
-              {room.state.lifecycle === "running" && room.state.phase === "LISTEN" ? (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Now Listening...</p>
-                  <p className="font-bold">Song details hidden for fairness</p>
-                  <p className="text-sm">Host playback should start automatically.</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">{room.round.title}</p>
-                  <p className="font-bold">{room.round.artist}</p>
-                  <p className="text-sm">Year: {room.round.year}</p>
-                  <p className="mt-2 text-xs font-semibold text-[#3e4f91]">{room.round.spotifyUri}</p>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <GameCard className="p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-bold text-card-foreground">Phase Timer</h3>
+            <span className="text-xs font-mono text-muted-foreground">{`Open '/play/game/${roomId}' to verify sync`}</span>
+          </div>
+          <TimerBar progress={progress} seconds={remainingSeconds} />
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Round Controls</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
+          <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4" role="status" aria-live="polite">
+            {room.state.lifecycle === "running" && room.state.phase === "LISTEN" ? (
+              <div className="flex items-center gap-3">
+                <CatMascot variant="thinking" size="sm" className="animate-wiggle" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Equalizer />
+                    <span className="text-sm font-semibold text-card-foreground">Now Listening...</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Song details hidden for fairness</p>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xl font-bold text-card-foreground">{room.round.title}</p>
+                <p className="font-semibold text-muted-foreground">{room.round.artist}</p>
+                <p className="text-sm text-muted-foreground">Year: {room.round.year}</p>
+              </div>
+            )}
+          </div>
+        </GameCard>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <GameCard className="p-5">
+            <h3 className="mb-4 font-bold text-card-foreground">Round Controls</h3>
+            <div className="flex flex-wrap gap-2">
               <Button variant="success" onClick={room.controls.startGame}>
-                Start Game
+                <Play className="h-4 w-4" />
+                Start
               </Button>
-              <Button variant="secondary" onClick={room.controls.skipPhase}>
-                <FastForward className="h-4 w-4" />
+              <Button onClick={room.controls.skipPhase}>
+                <SkipForward className="h-4 w-4" />
                 Skip Phase
               </Button>
               <Button variant="outline" onClick={room.controls.resetLobby}>
+                <RotateCcw className="h-4 w-4" />
                 Reset
               </Button>
               <Button variant="outline" onClick={room.controls.syncState}>
+                <Wifi className="h-4 w-4" />
                 Force Sync
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </GameCard>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Spotify Playback SDK</CardTitle>
-              <CardDescription>
-                Real host playback path for Premium account mode.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <label className="grid gap-2 text-sm font-bold text-[#32277e]">
-                Access token
-                <Input
-                  type="password"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                  placeholder="Paste OAuth token"
-                />
-              </label>
-
+          <GameCard className="p-5">
+            <h3 className="mb-4 font-bold text-card-foreground">Spotify Playback</h3>
+            <div className="flex flex-col gap-3">
+              <p className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm text-card-foreground">
+                <span className={`h-2.5 w-2.5 rounded-full ${spotify.ready ? "bg-[hsl(155_65%_40%)]" : "bg-[hsl(45_95%_52%)]"}`} />
+                {spotify.ready ? "Connected & Ready" : "Waiting for ready state"}
+              </p>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={saveToken}>
-                  Save Token
+                <Button
+                  size="sm"
+                  onClick={() => void spotify.playTrack(room.round.spotifyUri, room.round.startMs)}
+                  className="bg-[hsl(200_75%_50%)] text-white hover:bg-[hsl(200_75%_50%/0.9)]"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  Play Clip
                 </Button>
-                <Button variant="outline" onClick={refreshToken}>
-                  {refreshingToken ? "Refreshing..." : "Refresh Token"}
-                </Button>
-                <Button variant="secondary" onClick={() => void spotify.initialize()}>
-                  <Radio className="h-4 w-4" />
-                  Init SDK
-                </Button>
-                <Button onClick={() => void spotify.playTrack(room.round.spotifyUri, room.round.startMs)}>
-                  <Play className="h-4 w-4" />
-                  Play Round Clip
-                </Button>
-                <Button variant="outline" onClick={() => void spotify.pause()}>
-                  <Pause className="h-4 w-4" />
+                <Button size="sm" variant="outline" onClick={() => void spotify.pause()}>
+                  <Pause className="h-3.5 w-3.5" />
                   Pause
                 </Button>
               </div>
-
-              <div className="text-sm font-semibold text-[#2d2a77]" role="status" aria-live="polite">
-                <p>Connected: {spotify.connected ? "yes" : "no"}</p>
-                <p>Ready: {spotify.ready ? "yes" : "no"}</p>
-                <p>Device ID: {spotify.deviceId ?? "-"}</p>
-                {!interactionUnlocked ? (
-                  <p>Tap/click once on this page to unlock browser audio.</p>
-                ) : null}
-                {tokenStatus ? <p>{tokenStatus}</p> : null}
-                {spotify.error ? <p className="text-[#b43d2b]">{spotify.error}</p> : null}
-              </div>
-            </CardContent>
-          </Card>
+              <details className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                <summary className="cursor-pointer font-semibold text-card-foreground">Advanced controls</summary>
+                <div className="mt-3 space-y-3">
+                  <label className="grid gap-2">
+                    Access token
+                    <Input
+                      type="password"
+                      value={token}
+                      onChange={(event) => setToken(event.target.value)}
+                      placeholder="Paste OAuth token"
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={saveToken}>Save Token</Button>
+                    <Button variant="outline" size="sm" onClick={refreshToken}>
+                      {refreshingToken ? "Refreshing..." : "Refresh Token"}
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => void spotify.initialize()}>
+                      <Radio className="h-3.5 w-3.5" />
+                      Init SDK
+                    </Button>
+                    <Button size="sm" onClick={() => void spotify.playTrack(room.round.spotifyUri, room.round.startMs)}>
+                      <FastForward className="h-3.5 w-3.5" />
+                      Force Play
+                    </Button>
+                  </div>
+                  <div role="status" aria-live="polite" className="space-y-1 text-xs">
+                    <p>Connected: {spotify.connected ? "yes" : "no"}</p>
+                    <p>Ready: {spotify.ready ? "yes" : "no"}</p>
+                    {!interactionUnlocked ? <p>Tap/click once to unlock browser audio.</p> : null}
+                    {tokenStatus ? <p>{tokenStatus}</p> : null}
+                    {spotify.error ? <p className="text-[hsl(var(--destructive))]">{spotify.error}</p> : null}
+                  </div>
+                </div>
+              </details>
+            </div>
+          </GameCard>
         </div>
 
-        <Card className="mt-5">
-          <CardHeader>
-            <CardTitle>Live Leaderboard</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        <GameCard className="p-5">
+          <h3 className="mb-4 font-bold text-card-foreground">Live Leaderboard</h3>
+          <div className="stagger-children flex flex-col gap-2">
             {leaderboard.map((entry, index) => (
               <div
                 key={entry.id}
-                className="flex items-center justify-between rounded-xl border-2 border-[#3049a3] bg-[#f3f0ff] px-3 py-2"
+                className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
+                  index === 0
+                    ? "border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)]"
+                    : "border-border bg-muted/40"
+                }`}
               >
-                <span className="font-extrabold text-[#223f94]">
-                  {index + 1}. {entry.name}
-                </span>
-                <Badge variant={index === 0 ? "success" : "default"}>{entry.points}</Badge>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-bold text-muted-foreground">#{index + 1}</span>
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white"
+                    style={{ backgroundColor: entry.color }}
+                  >
+                    {entry.name.charAt(0)}
+                  </div>
+                  <span className="font-semibold text-card-foreground">{entry.name}</span>
+                </div>
+                <span className="font-mono text-lg font-bold text-[hsl(var(--primary))]">{entry.points}</span>
               </div>
             ))}
-            {leaderboard.length === 0 ? (
-              <p className="text-center text-sm font-semibold text-[#51449e]">No players in room.</p>
-            ) : null}
-          </CardContent>
-        </Card>
+            {leaderboard.length === 0 ? <p className="text-center text-sm text-muted-foreground">No players in room.</p> : null}
+          </div>
+        </GameCard>
 
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Button asChild variant="outline">
-            <Link to={`/play/game/${roomId}`}>Open Player Game</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to={`/results/${roomId}`}>Open Results</Link>
-          </Button>
-          <Button asChild variant="secondary">
+        <div className="flex justify-center gap-3">
+          <Button asChild variant="outline" size="sm">
             <Link to={`/host/lobby/${roomId}`}>Back To Lobby</Link>
           </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/">
+              <Home className="h-4 w-4" />
+              Home
+            </Link>
+          </Button>
         </div>
-      </section>
-    </main>
+      </div>
+    </GameLayout>
   );
 }

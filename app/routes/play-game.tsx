@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { Route } from "./+types/play-game";
 import { Link } from "react-router";
-import { ArrowDown, ArrowUp, CheckCircle2, Minus, XCircle } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, Home, Minus, XCircle } from "lucide-react";
 
-import { Ribbon } from "~/components/ribbon";
+import { CatMascot, Equalizer, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { Progress } from "~/components/ui/progress";
 import { searchAutocomplete, type AutocompleteItem } from "~/lib/autocomplete";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import {
@@ -446,20 +445,19 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   };
 
   return (
-    <main className="jam-page">
-      <section className="jam-stage w-full max-w-5xl">
-        <Ribbon tone="cool">Player Round</Ribbon>
-
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          <Badge>{room.state.lifecycle.toUpperCase()}</Badge>
-          <Badge variant="warning">Round {room.state.roundIndex + 1}</Badge>
-          <Badge variant={room.state.phase === "LISTEN" ? "success" : "default"}>
+    <GameLayout className="mx-auto max-w-3xl">
+      <div className="animate-slide-up flex flex-col gap-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Badge variant="listening">Round {room.state.roundIndex + 1}</Badge>
+            <Badge variant="default">Score {currentScore}</Badge>
+          </div>
+          <Badge variant={room.state.phase === "LISTEN" ? "warning" : room.state.phase === "REVEAL" ? "success" : "warning"}>
             {phaseLabel(room.state.phase)}
           </Badge>
-          <Badge variant="default">Score {currentScore}</Badge>
         </div>
 
-        <Card className="mt-5">
+        <Card>
           <CardHeader>
             <CardTitle>{phaseLabel(room.state.phase)} Phase</CardTitle>
             <CardDescription>{phaseInstruction(room.state.phase)}</CardDescription>
@@ -489,11 +487,17 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   <p className="text-sm">Timeline answer: {room.round.year}</p>
                 </>
               ) : (
-                <>
-                  <p className="font-[var(--font-display)] text-2xl text-[#243a84]">Now Listening...</p>
-                  <p className="font-bold">Answer hidden until reveal</p>
-                  <p className="text-sm">Use autocomplete to lock your guess in this phase.</p>
-                </>
+                <div className="flex items-center gap-3">
+                  <CatMascot variant="thinking" size="sm" className="animate-wiggle" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Equalizer />
+                      <span className="text-sm font-semibold text-card-foreground">Now Listening...</span>
+                    </div>
+                    <p className="text-sm">Answer hidden until reveal</p>
+                    <p className="text-xs">Use autocomplete to lock your guess in this phase.</p>
+                  </div>
+                </div>
               )}
             </div>
             {showIntermissionStandings ? (
@@ -564,13 +568,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               </div>
             ) : null}
 
-            <div className="space-y-2">
-              <Progress value={progress} aria-label="Round phase progress" />
-              <p className="text-right text-sm font-bold text-[#2d2a77]" role="status" aria-live="polite">
-                {room.state.lifecycle === "running" ? `${Math.ceil(room.remainingMs / 1000)}s` : "Waiting"}
-              </p>
-            </div>
-            {revealOpen ? (
+            <TimerBar progress={progress} seconds={Math.ceil(room.remainingMs / 1000)} />
+            {revealOpen && !finishedGame ? (
               <div
                 ref={revealCardRef}
                 className="rounded-2xl border-2 border-[#29459c] bg-[#fff8dd] p-3"
@@ -618,7 +617,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               </div>
             ) : null}
 
-            {revealOpen ? (
+            {revealOpen && !finishedGame ? (
               <div className="rounded-2xl border-2 border-[#2f4eb8] bg-[#eef4ff] p-3">
                 <p className="text-sm font-bold text-[#223f94]">Your scoring</p>
                 {playerBreakdown ? (
@@ -1002,15 +1001,18 @@ export default function PlayGame({ params }: Route.ComponentProps) {
           </CardContent>
         </Card>
 
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <div className="flex flex-wrap justify-center gap-3">
           <Button asChild variant="outline">
             <Link to={`/play/lobby/${roomId}`}>Back To Lobby</Link>
           </Button>
-          <Button asChild variant="secondary">
-            <Link to={`/results/${roomId}`}>Open Results</Link>
+          <Button asChild variant="outline">
+            <Link to="/">
+              <Home className="h-4 w-4" />
+              Home
+            </Link>
           </Button>
         </div>
-      </section>
-    </main>
+      </div>
+    </GameLayout>
   );
 }

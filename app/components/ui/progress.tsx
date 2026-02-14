@@ -14,7 +14,7 @@ function Progress({ className, value = 0, ...props }: ProgressProps) {
     <div
       data-slot="progress"
       className={cn(
-        "relative h-3 w-full overflow-hidden rounded-full bg-[#d0c8ff]",
+        "relative h-2.5 w-full overflow-hidden rounded-full bg-[hsl(var(--muted))]",
         className,
       )}
       role="progressbar"
@@ -26,7 +26,7 @@ function Progress({ className, value = 0, ...props }: ProgressProps) {
     >
       <div
         data-slot="progress-indicator"
-        className="h-full bg-[linear-gradient(90deg,#4ec7e0,#4775e6)] transition-[width] duration-300"
+        className="h-full bg-[hsl(var(--accent))] transition-[width] duration-300"
         style={{ width: `${safe}%` }}
       />
     </div>
