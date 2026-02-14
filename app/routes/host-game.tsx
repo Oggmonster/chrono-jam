@@ -29,6 +29,16 @@ export default function HostGame({ params }: Route.ComponentProps) {
   const [refreshingToken, setRefreshingToken] = useState(false);
   const [interactionUnlocked, setInteractionUnlocked] = useState(false);
   const spotify = useSpotifyHostPlayer(token);
+  const {
+    ready: spotifyReady,
+    connected: spotifyConnected,
+    deviceId: spotifyDeviceId,
+    error: spotifyError,
+    debugMessages: spotifyDebugMessages,
+    initialize: initializeSpotify,
+    playTrack: playSpotifyTrack,
+    pause: pauseSpotify,
+  } = spotify;
   const autoPlayedRef = useRef<string>("");
   const autoInitTokenRef = useRef<string>("");
   const interactionUnlockedRef = useRef(false);
@@ -91,7 +101,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    if (spotify.connected) {
+    if (spotifyConnected) {
       return;
     }
 
@@ -100,8 +110,8 @@ export default function HostGame({ params }: Route.ComponentProps) {
     }
 
     autoInitTokenRef.current = trimmedToken;
-    void spotify.initialize();
-  }, [spotify.connected, spotify.initialize, token]);
+    void initializeSpotify();
+  }, [initializeSpotify, spotifyConnected, token]);
 
   useEffect(() => {
     const unlockFromInteraction = () => {
@@ -111,7 +121,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
 
       interactionUnlockedRef.current = true;
       setInteractionUnlocked(true);
-      void spotify.initialize();
+      void initializeSpotify();
     };
 
     window.addEventListener("pointerdown", unlockFromInteraction, { passive: true });
@@ -121,7 +131,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
       window.removeEventListener("pointerdown", unlockFromInteraction);
       window.removeEventListener("keydown", unlockFromInteraction);
     };
-  }, [spotify.initialize]);
+  }, [initializeSpotify]);
 
   const progress = useMemo(() => {
     if (room.state.lifecycle !== "running") {
@@ -153,12 +163,12 @@ export default function HostGame({ params }: Route.ComponentProps) {
         return;
       }
 
-      if (!spotify.ready || !spotify.deviceId) {
-        await spotify.initialize();
+      if (!spotifyReady || !spotifyDeviceId) {
+        await initializeSpotify();
         return;
       }
 
-      const played = await spotify.playTrack(room.round.spotifyUri, room.round.startMs);
+      const played = await playSpotifyTrack(room.round.spotifyUri, room.round.startMs);
       if (played) {
         autoPlayedRef.current = autoplayKey;
       }
@@ -180,8 +190,10 @@ export default function HostGame({ params }: Route.ComponentProps) {
     room.state.lifecycle,
     room.state.phase,
     room.state.phaseStartedAt,
-    spotify.deviceId,
-    spotify,
+    initializeSpotify,
+    playSpotifyTrack,
+    spotifyDeviceId,
+    spotifyReady,
   ]);
 
   useEffect(() => {
@@ -189,12 +201,12 @@ export default function HostGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    if (!spotify.connected) {
+    if (!spotifyConnected) {
       return;
     }
 
-    void spotify.pause();
-  }, [room.state.lifecycle, spotify]);
+    void pauseSpotify();
+  }, [pauseSpotify, room.state.lifecycle, spotifyConnected]);
 
   const saveToken = () => {
     if (typeof window === "undefined") {
@@ -290,7 +302,15 @@ export default function HostGame({ params }: Route.ComponentProps) {
           <GameCard className="p-5">
             <h3 className="mb-4 font-bold text-card-foreground">Round Controls</h3>
             <div className="flex flex-wrap gap-2">
-              <Button variant="success" onClick={room.controls.startGame}>
+              <Button
+                variant="success"
+                onClick={() => {
+                  interactionUnlockedRef.current = true;
+                  setInteractionUnlocked(true);
+                  void initializeSpotify();
+                  room.controls.startGame();
+                }}
+              >
                 <Play className="h-4 w-4" />
                 Start
               </Button>
@@ -309,19 +329,19 @@ export default function HostGame({ params }: Route.ComponentProps) {
             <h3 className="mb-4 font-bold text-card-foreground">Spotify Playback</h3>
             <div className="flex flex-col gap-3">
               <p className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm text-card-foreground">
-                <span className={`h-2.5 w-2.5 rounded-full ${spotify.ready ? "bg-[hsl(155_65%_40%)]" : "bg-[hsl(45_95%_52%)]"}`} />
-                {spotify.ready ? "Connected & Ready" : "Waiting for ready state"}
+                <span className={`h-2.5 w-2.5 rounded-full ${spotifyReady ? "bg-[hsl(155_65%_40%)]" : "bg-[hsl(45_95%_52%)]"}`} />
+                {spotifyReady ? "Connected & Ready" : "Waiting for ready state"}
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  onClick={() => void spotify.playTrack(room.round.spotifyUri, room.round.startMs)}
+                  onClick={() => void playSpotifyTrack(room.round.spotifyUri, room.round.startMs)}
                   className="bg-[hsl(200_75%_50%)] text-white hover:bg-[hsl(200_75%_50%/0.9)]"
                 >
                   <Play className="h-3.5 w-3.5" />
                   Play Clip
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => void spotify.pause()}>
+                <Button size="sm" variant="outline" onClick={() => void pauseSpotify()}>
                   <Pause className="h-3.5 w-3.5" />
                   Pause
                 </Button>
@@ -343,21 +363,29 @@ export default function HostGame({ params }: Route.ComponentProps) {
                     <Button variant="outline" size="sm" onClick={refreshToken}>
                       {refreshingToken ? "Refreshing..." : "Refresh Token"}
                     </Button>
-                    <Button variant="secondary" size="sm" onClick={() => void spotify.initialize()}>
+                    <Button variant="secondary" size="sm" onClick={() => void initializeSpotify()}>
                       <Radio className="h-3.5 w-3.5" />
                       Init SDK
                     </Button>
-                    <Button size="sm" onClick={() => void spotify.playTrack(room.round.spotifyUri, room.round.startMs)}>
+                    <Button size="sm" onClick={() => void playSpotifyTrack(room.round.spotifyUri, room.round.startMs)}>
                       <FastForward className="h-3.5 w-3.5" />
                       Force Play
                     </Button>
                   </div>
                   <div role="status" aria-live="polite" className="space-y-1 text-xs">
-                    <p>Connected: {spotify.connected ? "yes" : "no"}</p>
-                    <p>Ready: {spotify.ready ? "yes" : "no"}</p>
+                    <p>Connected: {spotifyConnected ? "yes" : "no"}</p>
+                    <p>Ready: {spotifyReady ? "yes" : "no"}</p>
+                    <p>Device ID: {spotifyDeviceId ?? "none"}</p>
                     {!interactionUnlocked ? <p>Tap/click once to unlock browser audio.</p> : null}
                     {tokenStatus ? <p>{tokenStatus}</p> : null}
-                    {spotify.error ? <p className="text-[hsl(var(--destructive))]">{spotify.error}</p> : null}
+                    {spotifyError ? <p className="text-[hsl(var(--destructive))]">{spotifyError}</p> : null}
+                    <div className="max-h-36 overflow-auto rounded-lg border border-border/80 bg-muted/30 p-2 font-mono text-[11px] leading-4">
+                      {spotifyDebugMessages.length === 0 ? (
+                        <p>No Spotify debug events yet.</p>
+                      ) : (
+                        spotifyDebugMessages.map((line, index) => <p key={`${index}:${line}`}>{line}</p>)
+                      )}
+                    </div>
                   </div>
                 </div>
               </details>
