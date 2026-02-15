@@ -60,6 +60,7 @@ export type RoundPlayerBreakdown = {
     track: number;
     artist: number;
     timeline: number;
+    speed: number;
     total: number;
   };
 };
@@ -162,7 +163,7 @@ const participantColors = ["#4ec7e0", "#f28d35", "#e45395", "#7bcf4b", "#7d6cfc"
 const participantStaleMs = 20_000;
 
 const phaseDurationsMs: Record<GamePhase, number> = {
-  LISTEN: 40_000,
+  LISTEN: 45_000,
   REVEAL: 8_000,
   INTERMISSION: 8_000,
 };
@@ -180,10 +181,12 @@ function fallbackRounds(): RoomRound[] {
   }));
 }
 
-const scoringMaxPoints = {
-  track: 1_000,
-  artist: 600,
-  timeline: 800,
+const scoringPoints = {
+  track: 25,
+  artist: 25,
+  timeline: 25,
+  speedBonusMax: 25,
+  speedBonusWindowSeconds: 45,
 };
 
 function nowMs() {
@@ -564,8 +567,7 @@ function isTimelinePlacementCorrect(state: RoomState, round: RoomRound, insertIn
   return isTimelineInsertCorrect(entries, round.year, insertIndex);
 }
 
-function decayedPoints(
-  maxPoints: number,
+function speedBonusPoints(
   submittedAt: number | undefined,
   phaseStartedAt: number,
   phaseEndsAt: number,
@@ -575,9 +577,15 @@ function decayedPoints(
   }
 
   const clampedAt = Math.max(phaseStartedAt, Math.min(submittedAt, phaseEndsAt));
-  const duration = Math.max(1, phaseEndsAt - phaseStartedAt);
-  const ratio = 1 - (clampedAt - phaseStartedAt) / duration;
-  return Math.max(0, Math.round(maxPoints * ratio));
+  const remainingMs = Math.max(0, phaseEndsAt - clampedAt);
+  const remainingSeconds = Math.ceil(remainingMs / 1_000);
+  return Math.max(
+    0,
+    Math.min(
+      scoringPoints.speedBonusMax,
+      Math.ceil((remainingSeconds / scoringPoints.speedBonusWindowSeconds) * scoringPoints.speedBonusMax),
+    ),
+  );
 }
 
 function ensureScoreKeys(state: RoomState) {
@@ -609,17 +617,15 @@ function resolveRoundIfNeeded(state: RoomState, at = nowMs()): RoomState {
       typeof timeline?.insertIndex === "number"
         ? isTimelinePlacementCorrect(state, round, timeline.insertIndex)
         : false;
+    const songAndArtistCorrect = trackCorrect && artistCorrect;
 
-    const trackPoints = trackCorrect
-      ? decayedPoints(scoringMaxPoints.track, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
+    const trackPoints = trackCorrect ? scoringPoints.track : 0;
+    const artistPoints = artistCorrect ? scoringPoints.artist : 0;
+    const timelinePoints = timelineCorrect ? scoringPoints.timeline : 0;
+    const speedPoints = songAndArtistCorrect
+      ? speedBonusPoints(guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
       : 0;
-    const artistPoints = artistCorrect
-      ? decayedPoints(scoringMaxPoints.artist, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
-      : 0;
-    const timelinePoints = timelineCorrect
-      ? decayedPoints(scoringMaxPoints.timeline, guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
-      : 0;
-    const total = trackPoints + artistPoints + timelinePoints;
+    const total = trackPoints + artistPoints + timelinePoints + speedPoints;
 
     scores[playerId] = (scores[playerId] ?? 0) + total;
     players[playerId] = {
@@ -633,6 +639,7 @@ function resolveRoundIfNeeded(state: RoomState, at = nowMs()): RoomState {
         track: trackPoints,
         artist: artistPoints,
         timeline: timelinePoints,
+        speed: speedPoints,
         total,
       },
     };

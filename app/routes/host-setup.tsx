@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type { Route } from "./+types/host-setup";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { ArrowLeft, ArrowRight, Link2, Music2, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Link2, Music2 } from "lucide-react";
 
 import { CatMascot, GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -10,7 +10,6 @@ import { generateRoomCode, normalizeRoomCode } from "~/lib/room-code";
 import {
   readStoredSpotifyToken,
   resolveSpotifyAccessToken,
-  refreshSpotifyAccessToken,
   storeSpotifyToken,
 } from "~/lib/spotify-token";
 
@@ -24,7 +23,6 @@ export default function HostSetup() {
   const [roomCode, setRoomCode] = useState("");
   const [token, setToken] = useState("");
   const [statusText, setStatusText] = useState("");
-  const [refreshingToken, setRefreshingToken] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -85,22 +83,6 @@ export default function HostSetup() {
       setStatusText("Spotify connected. Access token saved.");
     }
   }, [searchParams]);
-
-  const refreshToken = () => {
-    setRefreshingToken(true);
-    void refreshSpotifyAccessToken()
-      .then(({ accessToken, expiresIn }) => {
-        storeSpotifyToken(accessToken, expiresIn);
-        setToken(accessToken);
-        setStatusText("Spotify token refreshed.");
-      })
-      .catch(() => {
-        setStatusText("Spotify token refresh failed. Reconnect Spotify.");
-      })
-      .finally(() => {
-        setRefreshingToken(false);
-      });
-  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -165,10 +147,6 @@ export default function HostSetup() {
                     <Link2 className="h-3.5 w-3.5" />
                     Connect
                   </a>
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={refreshToken} disabled={refreshingToken}>
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {refreshingToken ? "Refreshing..." : "Refresh"}
                 </Button>
               </div>
             </div>

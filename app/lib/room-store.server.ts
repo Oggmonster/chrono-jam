@@ -57,6 +57,7 @@ type StoredRoundPlayerBreakdown = {
     track: number;
     artist: number;
     timeline: number;
+    speed: number;
     total: number;
   };
 };
@@ -411,6 +412,14 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
 
       const players: Record<string, StoredRoundPlayerBreakdown> = {};
       for (const [playerId, rawPlayerBreakdown] of Object.entries(rawBreakdown.players)) {
+        const speedPoints =
+          typeof rawPlayerBreakdown === "object" &&
+          rawPlayerBreakdown !== null &&
+          typeof rawPlayerBreakdown.points === "object" &&
+          rawPlayerBreakdown.points !== null &&
+          typeof rawPlayerBreakdown.points.speed === "number"
+            ? rawPlayerBreakdown.points.speed
+            : 0;
         if (
           typeof rawPlayerBreakdown !== "object" ||
           rawPlayerBreakdown === null ||
@@ -441,6 +450,7 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
             track: rawPlayerBreakdown.points.track,
             artist: rawPlayerBreakdown.points.artist,
             timeline: rawPlayerBreakdown.points.timeline,
+            speed: speedPoints,
             total: rawPlayerBreakdown.points.total,
           },
         };
