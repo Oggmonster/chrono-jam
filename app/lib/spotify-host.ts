@@ -51,6 +51,9 @@ const READY_WAIT_MS = 5_000;
 const READY_POLL_MS = 100;
 const INITIALIZE_MAX_ATTEMPTS = 2;
 const NOT_READY_GRACE_MS = 1_200;
+const PLAYBACK_ERROR_WINDOW_MS = 4_500;
+const PLAYBACK_ERROR_BURST_COUNT = 4;
+const DEVICE_BLOCK_MS = 90_000;
 
 function nowStamp() {
   const now = new Date();
@@ -146,6 +149,9 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
   const readyRef = useRef(false);
   const deviceIdRef = useRef<string | null>(null);
   const lastPlayerStateRef = useRef<string>("");
+  const recentPlaybackErrorTsRef = useRef<number[]>([]);
+  const blockedDeviceIdsRef = useRef<Map<string, number>>(new Map());
+  const preferExternalDeviceUntilRef = useRef(0);
 
   const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -182,6 +188,9 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
       deviceIdRef.current = null;
       activateDeviceInFlightRef.current = null;
       playTrackInFlightRef.current = null;
+      recentPlaybackErrorTsRef.current = [];
+      blockedDeviceIdsRef.current.clear();
+      preferExternalDeviceUntilRef.current = 0;
       setConnected(false);
       setReady(false);
       setDeviceId(null);
@@ -274,6 +283,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
 
           readyRef.current = true;
           deviceIdRef.current = device_id;
+          recentPlaybackErrorTsRef.current = [];
           setDeviceId(device_id);
           setReady(true);
           setConnected(true);
@@ -339,9 +349,26 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
           if (activePlayerInstanceRef.current !== instanceId) {
             return;
           }
+          const now = Date.now();
+          const recent = [...recentPlaybackErrorTsRef.current, now].filter(
+            (timestamp) => now - timestamp <= PLAYBACK_ERROR_WINDOW_MS,
+          );
+          recentPlaybackErrorTsRef.current = recent;
+
           const nextMessage = message ?? "Spotify playback error.";
-          setError(nextMessage);
-          logDebug(`event: playback_error ${nextMessage}`);
+          const currentDeviceId = deviceIdRef.current;
+          logDebug(
+            `event: playback_error ${nextMessage}${currentDeviceId ? ` device_id=${currentDeviceId}` : ""} burst=${recent.length}`,
+          );
+
+          if (!currentDeviceId || recent.length < PLAYBACK_ERROR_BURST_COUNT) {
+            return;
+          }
+
+          blockedDeviceIdsRef.current.set(currentDeviceId, now + DEVICE_BLOCK_MS);
+          preferExternalDeviceUntilRef.current = now + DEVICE_BLOCK_MS;
+          setError("Spotify web player is unstable in this browser. Switching to another Spotify device.");
+          logDebug(`device: blocked unstable device ${currentDeviceId} for ${DEVICE_BLOCK_MS}ms.`);
         });
 
         player.addListener("player_state_changed", (state) => {
@@ -539,8 +566,29 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
     [logDebug, spotifyGet],
   );
 
-  const pickFallbackDevice = useCallback((devices: SpotifyAvailableDevice[]) => {
-    const chronoJam = devices.find((device) => device.name.toLowerCase().includes("chronojam"));
+  const pickFallbackDevice = useCallback((devices: SpotifyAvailableDevice[], preferExternalDevice: boolean) => {
+    const isChronoJamDevice = (device: SpotifyAvailableDevice) => device.name.toLowerCase().includes("chronojam");
+
+    if (preferExternalDevice) {
+      const externalActive = devices.find((device) => !isChronoJamDevice(device) && device.isActive);
+      if (externalActive) {
+        return externalActive;
+      }
+
+      const externalSpeaker = devices.find(
+        (device) => !isChronoJamDevice(device) && device.type.toLowerCase() === "speaker",
+      );
+      if (externalSpeaker) {
+        return externalSpeaker;
+      }
+
+      const anyExternal = devices.find((device) => !isChronoJamDevice(device));
+      if (anyExternal) {
+        return anyExternal;
+      }
+    }
+
+    const chronoJam = devices.find((device) => isChronoJamDevice(device));
     if (chronoJam) {
       return chronoJam;
     }
@@ -565,11 +613,29 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
         return preferredDeviceId;
       }
 
-      if (preferredDeviceId && devices.some((device) => device.id === preferredDeviceId)) {
+      const now = Date.now();
+      for (const [blockedDeviceId, expiresAt] of blockedDeviceIdsRef.current.entries()) {
+        if (expiresAt <= now) {
+          blockedDeviceIdsRef.current.delete(blockedDeviceId);
+        }
+      }
+
+      const filteredDevices = devices.filter((device) => {
+        const blockedUntil = blockedDeviceIdsRef.current.get(device.id);
+        return !blockedUntil || blockedUntil <= now;
+      });
+      const candidateDevices = filteredDevices.length > 0 ? filteredDevices : devices;
+      const preferExternalDevice = preferExternalDeviceUntilRef.current > now;
+
+      if (
+        preferredDeviceId &&
+        candidateDevices.some((device) => device.id === preferredDeviceId) &&
+        !preferExternalDevice
+      ) {
         return preferredDeviceId;
       }
 
-      const fallback = pickFallbackDevice(devices);
+      const fallback = pickFallbackDevice(candidateDevices, preferExternalDevice);
       if (!fallback) {
         return preferredDeviceId;
       }
@@ -686,22 +752,25 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
           return false;
         }
 
-        if (!readyRef.current || !deviceIdRef.current) {
-          logDebug("playTrack: player not ready; running initialize().");
+        let targetDeviceId = deviceIdRef.current;
+        if (!targetDeviceId) {
+          logDebug("playTrack: no SDK device id yet; running initialize() (best effort).");
           const initialized = await initialize();
-          if (!initialized || !deviceIdRef.current) {
-            setError("Connect Spotify player before trying playback.");
-            logDebug("playTrack: initialize() did not produce a ready device.");
-            return false;
+          if (!initialized) {
+            logDebug("playTrack: initialize() failed; trying API-visible device fallback.");
           }
+          targetDeviceId = deviceIdRef.current;
         }
 
-        const targetDeviceId = deviceIdRef.current;
+        targetDeviceId = await resolvePlayableDeviceId(targetDeviceId, "playTrack bootstrap");
         if (!targetDeviceId) {
-          setError("Connect Spotify player before trying playback.");
-          logDebug("playTrack: missing device id after initialize.");
+          setError("No Spotify Connect device is available. Open Spotify on the host device and retry.");
+          logDebug("playTrack: no playable device available after bootstrap.");
           return false;
         }
+        deviceIdRef.current = targetDeviceId;
+        setDeviceId(targetDeviceId);
+        setConnected(true);
 
         const attemptPlay = async (attemptNumber: number, deviceForAttempt: string) => {
           const routedDeviceId = await resolvePlayableDeviceId(deviceForAttempt, `playTrack resolve ${attemptNumber}`);
@@ -745,10 +814,10 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
 
         if (firstAttempt.status === 404) {
           logDebug("playTrack: device missing on play; attempting full reinitialize.");
-          const recovered = await initialize();
-          const recoveredDeviceId = deviceIdRef.current;
-          if (!recovered || !recoveredDeviceId) {
-            logDebug("playTrack: reinitialize after play 404 failed.");
+          await initialize();
+          const recoveredDeviceId = await resolvePlayableDeviceId(deviceIdRef.current, "playTrack recover route");
+          if (!recoveredDeviceId) {
+            logDebug("playTrack: reinitialize fallback could not find any playable device.");
             return false;
           }
 
@@ -782,10 +851,20 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
   );
 
   const pause = useCallback(async () => {
-    const currentDeviceId = deviceIdRef.current;
-    if (!tokenRef.current || !currentDeviceId) {
-      logDebug("pause: ignored (missing token/device).");
+    if (!tokenRef.current) {
+      logDebug("pause: ignored (missing token).");
       return;
+    }
+
+    let currentDeviceId = deviceIdRef.current;
+    if (!currentDeviceId) {
+      currentDeviceId = await resolvePlayableDeviceId(null, "pause bootstrap");
+      if (!currentDeviceId) {
+        logDebug("pause: ignored (no playable device).");
+        return;
+      }
+      deviceIdRef.current = currentDeviceId;
+      setDeviceId(currentDeviceId);
     }
 
     const { ok, status, response } = await spotifyPut(`/me/player/pause?device_id=${currentDeviceId}`);
@@ -801,7 +880,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
     }
 
     logDebug("pause: success.");
-  }, [logAvailableDevices, logDebug, readSpotifyErrorDetail, spotifyPut]);
+  }, [logAvailableDevices, logDebug, readSpotifyErrorDetail, resolvePlayableDeviceId, spotifyPut]);
 
   const disconnect = useCallback(() => {
     resetPlayerState("manual disconnect", true);

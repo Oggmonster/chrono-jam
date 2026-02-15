@@ -159,12 +159,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
         return;
       }
 
-      if (autoPlayedRef.current === autoplayKey) {
-        return;
-      }
-
-      if (!spotifyReady || !spotifyDeviceId) {
-        await initializeSpotify();
+      if (autoPlayedRef.current === autoplayKey && !spotifyError) {
         return;
       }
 
@@ -190,10 +185,8 @@ export default function HostGame({ params }: Route.ComponentProps) {
     room.state.lifecycle,
     room.state.phase,
     room.state.phaseStartedAt,
-    initializeSpotify,
     playSpotifyTrack,
-    spotifyDeviceId,
-    spotifyReady,
+    spotifyError,
   ]);
 
   useEffect(() => {
