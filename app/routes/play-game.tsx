@@ -658,7 +658,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-2 text-sm font-bold text-card-foreground">
                 <label htmlFor="track-guess-input">Song title</label>
-                <div className="relative z-20">
+                <div className="relative z-20 focus-within:z-50">
                   <Input
                     id="track-guess-input"
                     placeholder="Type at least 2 chars"
@@ -693,7 +693,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     <ul
                       id="track-guess-listbox"
                       role="listbox"
-                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-40 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
+                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
                     >
                       {trackSuggestions.map((suggestion) => (
                         <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">
@@ -726,7 +726,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               </div>
               <div className="grid gap-2 text-sm font-bold text-card-foreground">
                 <label htmlFor="artist-guess-input">Artist</label>
-                <div className="relative z-20">
+                <div className="relative z-20 focus-within:z-50">
                   <Input
                     id="artist-guess-input"
                     placeholder="Type at least 2 chars"
@@ -761,7 +761,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     <ul
                       id="artist-guess-listbox"
                       role="listbox"
-                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-40 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
+                      className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
                     >
                       {artistSuggestions.map((suggestion) => (
                         <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">

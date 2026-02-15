@@ -16,7 +16,6 @@ import {
 import { useRoomState } from "~/lib/game-engine";
 import {
   readStoredSpotifyToken,
-  refreshSpotifyAccessToken,
   resolveSpotifyAccessToken,
 } from "~/lib/spotify-token";
 
@@ -39,7 +38,6 @@ export default function HostLobby({ params }: Route.ComponentProps) {
 
   const [spotifyTokenPresent, setSpotifyTokenPresent] = useState(false);
   const [spotifyTokenStatus, setSpotifyTokenStatus] = useState("");
-  const [refreshingToken, setRefreshingToken] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const [playlistCatalog, setPlaylistCatalog] = useState<PlaylistCatalogEntry[]>([]);
@@ -238,12 +236,6 @@ export default function HostLobby({ params }: Route.ComponentProps) {
     });
   };
 
-  const resetDraft = () => {
-    setSettingsDirty(false);
-    setSelectedPlaylistIds(room.state.playlistIds.length > 0 ? room.state.playlistIds : ["core-pop"]);
-    setRequestedSongCount(room.state.gameSongCount);
-  };
-
   const checkTokenStatus = async () => {
     const stored = readStoredSpotifyToken();
     setSpotifyTokenPresent(Boolean(stored.accessToken));
@@ -263,21 +255,6 @@ export default function HostLobby({ params }: Route.ComponentProps) {
         setSpotifyTokenStatus("Spotify token missing. Reconnect Spotify.");
       }
     }
-  };
-
-  const refreshTokenNow = () => {
-    setRefreshingToken(true);
-    void refreshSpotifyAccessToken()
-      .then(() => {
-        setSpotifyTokenPresent(true);
-        setSpotifyTokenStatus("Spotify token refreshed.");
-      })
-      .catch(() => {
-        setSpotifyTokenStatus("Spotify token refresh failed. Reconnect Spotify.");
-      })
-      .finally(() => {
-        setRefreshingToken(false);
-      });
   };
 
   useEffect(() => {
@@ -440,9 +417,15 @@ export default function HostLobby({ params }: Route.ComponentProps) {
               <Check className="h-4 w-4" />
               Sync Setup to Players
             </Button>
-            <Button variant="outline" onClick={resetDraft} disabled={!setupChanged}>
-              Reset Draft
+            <Button variant="success" onClick={room.controls.startGame} disabled={!canStartNormally}>
+              <Play className="h-4 w-4" />
+              Start Game
             </Button>
+            {canForceStart ? (
+              <Button variant="outline" onClick={room.controls.startGame}>
+                Force Start
+              </Button>
+            ) : null}
           </div>
         </GameCard>
 
@@ -509,23 +492,8 @@ export default function HostLobby({ params }: Route.ComponentProps) {
                 status={allReady ? "ready" : "waiting"}
               />
               {spotifyTokenStatus ? <p className="text-xs text-muted-foreground">{spotifyTokenStatus}</p> : null}
-              <Button variant="outline" onClick={refreshTokenNow} disabled={refreshingToken}>
-                {refreshingToken ? "Refreshing..." : "Refresh Token"}
-              </Button>
             </div>
           </GameCard>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Button variant="success" size="lg" onClick={room.controls.startGame} disabled={!canStartNormally}>
-            <Play className="h-4 w-4" />
-            Start Game
-          </Button>
-          {canForceStart ? (
-            <Button variant="outline" onClick={room.controls.startGame}>
-              Force Start
-            </Button>
-          ) : null}
         </div>
 
         {room.state.lifecycle !== "lobby" ? (

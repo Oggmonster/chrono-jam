@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-game";
 import { Link } from "react-router";
-import { FastForward, Home, Pause, Play, Radio, SkipForward, Wifi } from "lucide-react";
+import { FastForward, Home, Play, Radio } from "lucide-react";
 
 import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -35,9 +35,13 @@ export default function HostGame({ params }: Route.ComponentProps) {
     deviceId: spotifyDeviceId,
     error: spotifyError,
     debugMessages: spotifyDebugMessages,
+    availableDevices: spotifyAvailableDevices,
+    preferredDeviceId: spotifyPreferredDeviceId,
     initialize: initializeSpotify,
     playTrack: playSpotifyTrack,
     pause: pauseSpotify,
+    refreshDevices: refreshSpotifyDevices,
+    setPreferredDeviceId: setSpotifyPreferredDeviceId,
   } = spotify;
   const autoPlayedRef = useRef<string>("");
   const autoInitTokenRef = useRef<string>("");
@@ -132,6 +136,21 @@ export default function HostGame({ params }: Route.ComponentProps) {
       window.removeEventListener("keydown", unlockFromInteraction);
     };
   }, [initializeSpotify]);
+
+  useEffect(() => {
+    if (!token.trim()) {
+      return;
+    }
+
+    void refreshSpotifyDevices();
+    const timer = window.setInterval(() => {
+      void refreshSpotifyDevices();
+    }, 8_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [refreshSpotifyDevices, spotifyConnected, token]);
 
   const progress = useMemo(() => {
     if (room.state.lifecycle !== "running") {
@@ -291,101 +310,6 @@ export default function HostGame({ params }: Route.ComponentProps) {
           </div>
         </GameCard>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <GameCard className="p-5">
-            <h3 className="mb-4 font-bold text-card-foreground">Round Controls</h3>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="success"
-                onClick={() => {
-                  interactionUnlockedRef.current = true;
-                  setInteractionUnlocked(true);
-                  void initializeSpotify();
-                  room.controls.startGame();
-                }}
-              >
-                <Play className="h-4 w-4" />
-                Start
-              </Button>
-              <Button onClick={room.controls.skipPhase}>
-                <SkipForward className="h-4 w-4" />
-                Skip Phase
-              </Button>
-              <Button variant="outline" onClick={room.controls.syncState}>
-                <Wifi className="h-4 w-4" />
-                Force Sync
-              </Button>
-            </div>
-          </GameCard>
-
-          <GameCard className="p-5">
-            <h3 className="mb-4 font-bold text-card-foreground">Spotify Playback</h3>
-            <div className="flex flex-col gap-3">
-              <p className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm text-card-foreground">
-                <span className={`h-2.5 w-2.5 rounded-full ${spotifyReady ? "bg-[hsl(155_65%_40%)]" : "bg-[hsl(45_95%_52%)]"}`} />
-                {spotifyReady ? "Connected & Ready" : "Waiting for ready state"}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => void playSpotifyTrack(room.round.spotifyUri, room.round.startMs)}
-                  className="bg-[hsl(200_75%_50%)] text-white hover:bg-[hsl(200_75%_50%/0.9)]"
-                >
-                  <Play className="h-3.5 w-3.5" />
-                  Play Clip
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => void pauseSpotify()}>
-                  <Pause className="h-3.5 w-3.5" />
-                  Pause
-                </Button>
-              </div>
-              <details className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                <summary className="cursor-pointer font-semibold text-card-foreground">Advanced controls</summary>
-                <div className="mt-3 space-y-3">
-                  <label className="grid gap-2">
-                    Access token
-                    <Input
-                      type="password"
-                      value={token}
-                      onChange={(event) => setToken(event.target.value)}
-                      placeholder="Paste OAuth token"
-                    />
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" size="sm" onClick={saveToken}>Save Token</Button>
-                    <Button variant="outline" size="sm" onClick={refreshToken}>
-                      {refreshingToken ? "Refreshing..." : "Refresh Token"}
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => void initializeSpotify()}>
-                      <Radio className="h-3.5 w-3.5" />
-                      Init SDK
-                    </Button>
-                    <Button size="sm" onClick={() => void playSpotifyTrack(room.round.spotifyUri, room.round.startMs)}>
-                      <FastForward className="h-3.5 w-3.5" />
-                      Force Play
-                    </Button>
-                  </div>
-                  <div role="status" aria-live="polite" className="space-y-1 text-xs">
-                    <p>Connected: {spotifyConnected ? "yes" : "no"}</p>
-                    <p>Ready: {spotifyReady ? "yes" : "no"}</p>
-                    <p>Device ID: {spotifyDeviceId ?? "none"}</p>
-                    {!interactionUnlocked ? <p>Tap/click once to unlock browser audio.</p> : null}
-                    {tokenStatus ? <p>{tokenStatus}</p> : null}
-                    {spotifyError ? <p className="text-[hsl(var(--destructive))]">{spotifyError}</p> : null}
-                    <div className="max-h-36 overflow-auto rounded-lg border border-border/80 bg-muted/30 p-2 font-mono text-[11px] leading-4">
-                      {spotifyDebugMessages.length === 0 ? (
-                        <p>No Spotify debug events yet.</p>
-                      ) : (
-                        spotifyDebugMessages.map((line, index) => <p key={`${index}:${line}`}>{line}</p>)
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </details>
-            </div>
-          </GameCard>
-        </div>
-
         <GameCard className="p-5">
           <h3 className="mb-4 font-bold text-card-foreground">Live Leaderboard</h3>
           <div className="stagger-children flex flex-col gap-2">
@@ -414,6 +338,99 @@ export default function HostGame({ params }: Route.ComponentProps) {
             {leaderboard.length === 0 ? <p className="text-center text-sm text-muted-foreground">No players in room.</p> : null}
           </div>
         </GameCard>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <GameCard className="p-5">
+            <h3 className="mb-4 font-bold text-card-foreground">Round Controls</h3>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="success"
+                onClick={() => {
+                  interactionUnlockedRef.current = true;
+                  setInteractionUnlocked(true);
+                  void initializeSpotify();
+                  room.controls.startGame();
+                }}
+              >
+                <Play className="h-4 w-4" />
+                Start
+              </Button>
+            </div>
+          </GameCard>
+
+          <GameCard className="p-5">
+            <h3 className="mb-4 font-bold text-card-foreground">Spotify Playback</h3>
+            <div className="flex flex-col gap-3">
+              <p className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm text-card-foreground">
+                <span className={`h-2.5 w-2.5 rounded-full ${spotifyReady ? "bg-[hsl(155_65%_40%)]" : "bg-[hsl(45_95%_52%)]"}`} />
+                {spotifyReady ? "Connected & Ready" : "Waiting for ready state"}
+              </p>
+              <details className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                <summary className="cursor-pointer font-semibold text-card-foreground">Advanced controls</summary>
+                <div className="mt-3 space-y-3">
+                  <label className="grid gap-2">
+                    Access token
+                    <Input
+                      type="password"
+                      value={token}
+                      onChange={(event) => setToken(event.target.value)}
+                      placeholder="Paste OAuth token"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    Playback device
+                    <select
+                      className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                      value={spotifyPreferredDeviceId ?? ""}
+                      onChange={(event) => setSpotifyPreferredDeviceId(event.target.value || null)}
+                    >
+                      <option value="">Auto (recommended)</option>
+                      {spotifyAvailableDevices.map((device) => (
+                        <option key={device.id} value={device.id}>
+                          {`${device.name} (${device.type})${device.isActive ? " [active]" : ""}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={saveToken}>Save Token</Button>
+                    <Button variant="outline" size="sm" onClick={refreshToken}>
+                      {refreshingToken ? "Refreshing..." : "Refresh Token"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => void refreshSpotifyDevices()}>
+                      Refresh Devices
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => void initializeSpotify()}>
+                      <Radio className="h-3.5 w-3.5" />
+                      Init SDK
+                    </Button>
+                    <Button size="sm" onClick={() => void playSpotifyTrack(room.round.spotifyUri, room.round.startMs)}>
+                      <FastForward className="h-3.5 w-3.5" />
+                      Force Play
+                    </Button>
+                  </div>
+                  <div role="status" aria-live="polite" className="space-y-1 text-xs">
+                    <p>Connected: {spotifyConnected ? "yes" : "no"}</p>
+                    <p>Ready: {spotifyReady ? "yes" : "no"}</p>
+                    <p>Device ID: {spotifyDeviceId ?? "none"}</p>
+                    <p>Selected Device: {spotifyPreferredDeviceId ?? "auto"}</p>
+                    <p>Visible Devices: {spotifyAvailableDevices.length}</p>
+                    {!interactionUnlocked ? <p>Tap/click once to unlock browser audio.</p> : null}
+                    {tokenStatus ? <p>{tokenStatus}</p> : null}
+                    {spotifyError ? <p className="text-[hsl(var(--destructive))]">{spotifyError}</p> : null}
+                    <div className="max-h-36 overflow-auto rounded-lg border border-border/80 bg-muted/30 p-2 font-mono text-[11px] leading-4">
+                      {spotifyDebugMessages.length === 0 ? (
+                        <p>No Spotify debug events yet.</p>
+                      ) : (
+                        spotifyDebugMessages.map((line, index) => <p key={`${index}:${line}`}>{line}</p>)
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </GameCard>
+        </div>
 
         <div className="flex justify-center gap-3">
           <Button asChild variant="outline" size="sm">
