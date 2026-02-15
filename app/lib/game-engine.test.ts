@@ -27,7 +27,7 @@ describe("game-engine scoring", () => {
     expect(phaseDurations.LISTEN).toBe(45_000);
   });
 
-  it("resolves guess and timeline points from guess lock time", () => {
+  it("resolves fixed guess/year points plus speed bonus from guess lock time", () => {
     const at = 1_000_000;
     const state = buildRunningState(at);
     const round = mockRounds[0]!;
@@ -62,11 +62,12 @@ describe("game-engine scoring", () => {
     expect(breakdown.guessCorrect.track).toBe(true);
     expect(breakdown.guessCorrect.artist).toBe(true);
     expect(breakdown.timelineCorrect).toBe(true);
-    expect(breakdown.points.track).toBe(889);
-    expect(breakdown.points.artist).toBe(533);
-    expect(breakdown.points.timeline).toBe(711);
-    expect(breakdown.points.total).toBe(2133);
-    expect(revealState.scores.p1).toBe(2133);
+    expect(breakdown.points.track).toBe(25);
+    expect(breakdown.points.artist).toBe(25);
+    expect(breakdown.points.timeline).toBe(25);
+    expect(breakdown.points.speed).toBe(23);
+    expect(breakdown.points.total).toBe(98);
+    expect(revealState.scores.p1).toBe(98);
   });
 
   it("does not award timeline points when placement is wrong", () => {
@@ -100,5 +101,44 @@ describe("game-engine scoring", () => {
 
     expect(breakdown.timelineCorrect).toBe(false);
     expect(breakdown.points.timeline).toBe(0);
+    expect(breakdown.points.speed).toBe(20);
+  });
+
+  it("awards no speed bonus unless both song and artist are correct", () => {
+    const at = 3_000_000;
+    const state = buildRunningState(at);
+    const round = mockRounds[0]!;
+
+    const withWrongArtist: RoomState = {
+      ...state,
+      guessSubmissions: {
+        [`p1:${round.id}`]: {
+          playerId: "p1",
+          roundId: round.id,
+          trackId: round.trackId,
+          artistId: mockRounds[1]!.artistId,
+          submittedAt: at + 3_000,
+        },
+      },
+      timelineSubmissions: {
+        [`p1:${round.id}`]: {
+          playerId: "p1",
+          roundId: round.id,
+          insertIndex: 2,
+          submittedAt: at + 6_000,
+        },
+      },
+    };
+
+    const revealState = advanceRoomPhase(withWrongArtist, withWrongArtist.phaseEndsAt);
+    const breakdown = revealState.roundBreakdowns[round.id]!.players.p1!;
+
+    expect(breakdown.guessCorrect.track).toBe(true);
+    expect(breakdown.guessCorrect.artist).toBe(false);
+    expect(breakdown.points.track).toBe(25);
+    expect(breakdown.points.artist).toBe(0);
+    expect(breakdown.points.timeline).toBe(25);
+    expect(breakdown.points.speed).toBe(0);
+    expect(breakdown.points.total).toBe(50);
   });
 });

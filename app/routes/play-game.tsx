@@ -396,10 +396,16 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       points: playerBreakdown?.points.artist ?? 0,
     },
     {
-      id: "timeline",
-      label: "Timeline",
+      id: "year",
+      label: "Year",
       correct: Boolean(playerBreakdown?.timelineCorrect),
       points: playerBreakdown?.points.timeline ?? 0,
+    },
+    {
+      id: "speed",
+      label: "Speed bonus",
+      correct: Boolean(trackCorrect && artistCorrect),
+      points: playerBreakdown?.points.speed ?? 0,
     },
   ];
   const intermissionCompactView = intermissionOpen;
