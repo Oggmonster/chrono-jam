@@ -76,6 +76,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const [selectedArtist, setSelectedArtist] = useState<AutocompleteItem | null>(null);
   const [trackInputFocused, setTrackInputFocused] = useState(false);
   const [artistInputFocused, setArtistInputFocused] = useState(false);
+  const [trackActiveSuggestionIndex, setTrackActiveSuggestionIndex] = useState(-1);
+  const [artistActiveSuggestionIndex, setArtistActiveSuggestionIndex] = useState(-1);
   const [timelineDragging, setTimelineDragging] = useState(false);
   const [timelineHoverSlot, setTimelineHoverSlot] = useState<number | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
@@ -149,6 +151,10 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     }
     return searchAutocomplete(autocomplete.artists, artistQuery, 8);
   }, [artistInputFocused, artistQuery, autocomplete.artists, canEditGuess, selectedArtist]);
+  const isTrackAutocompleteOpen =
+    canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2;
+  const isArtistAutocompleteOpen =
+    canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2;
 
   useEffect(() => {
     setPlayerSession(getPlayerSession(roomId));
@@ -193,6 +199,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     setSelectedArtist(null);
     setTrackInputFocused(false);
     setArtistInputFocused(false);
+    setTrackActiveSuggestionIndex(-1);
+    setArtistActiveSuggestionIndex(-1);
     setTimelineDragging(false);
     setTimelineHoverSlot(null);
   }, [room.round.id]);
@@ -208,6 +216,8 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     setSelectedArtist(null);
     setTrackInputFocused(false);
     setArtistInputFocused(false);
+    setTrackActiveSuggestionIndex(-1);
+    setArtistActiveSuggestionIndex(-1);
     setTimelineDragging(false);
     setTimelineHoverSlot(null);
   }, [room.state.phase]);
@@ -260,6 +270,42 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       window.clearTimeout(timer);
     };
   }, [finishedGame]);
+
+  useEffect(() => {
+    if (trackSuggestions.length === 0) {
+      setTrackActiveSuggestionIndex(-1);
+      return;
+    }
+
+    setTrackActiveSuggestionIndex((current) =>
+      current >= 0 && current < trackSuggestions.length ? current : 0,
+    );
+  }, [trackSuggestions]);
+
+  useEffect(() => {
+    if (artistSuggestions.length === 0) {
+      setArtistActiveSuggestionIndex(-1);
+      return;
+    }
+
+    setArtistActiveSuggestionIndex((current) =>
+      current >= 0 && current < artistSuggestions.length ? current : 0,
+    );
+  }, [artistSuggestions]);
+
+  const selectTrackSuggestion = (suggestion: AutocompleteItem) => {
+    setSelectedTrack(suggestion);
+    setTrackQuery(suggestion.display);
+    setTrackInputFocused(false);
+    setTrackActiveSuggestionIndex(-1);
+  };
+
+  const selectArtistSuggestion = (suggestion: AutocompleteItem) => {
+    setSelectedArtist(suggestion);
+    setArtistQuery(suggestion.display);
+    setArtistInputFocused(false);
+    setArtistActiveSuggestionIndex(-1);
+  };
 
   const submitGuess = () => {
     if (!playerSession || !canSubmitGuess || !selectedTrack || !selectedArtist) {
@@ -411,6 +457,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const intermissionCompactView = intermissionOpen;
   const layoutWidthClass = room.state.phase === "REVEAL" || intermissionCompactView || finishedGame ? "max-w-lg" : "max-w-3xl";
   const winnerScore = leaderboard[0]?.score ?? currentScore;
+  const songsPlayed = room.state.rounds;
 
   return (
     <GameLayout className={`mx-auto ${layoutWidthClass}`}>
@@ -507,16 +554,62 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 <p className="text-sm font-bold text-[hsl(var(--primary))]">Winning score: {winnerScore}</p>
               </div>
             </GameCard>
+
+            <GameCard className="p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Music className="h-4 w-4 text-[hsl(var(--accent))]" />
+                <p className="text-sm font-bold text-card-foreground">Songs Played</p>
+              </div>
+              {songsPlayed.length > 0 ? (
+                <ol className="space-y-2">
+                  {songsPlayed.map((round, index) => (
+                    <li key={round.id} className="flex items-center gap-3 rounded-xl border border-border bg-muted/35 p-3">
+                      {round.coverUrl ? (
+                        <img
+                          src={round.coverUrl}
+                          alt={`${round.title} cover art`}
+                          className="h-12 w-12 shrink-0 rounded-md border border-border object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border bg-muted/60">
+                          <Music className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-card-foreground">{round.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{round.artist}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-sm font-bold text-card-foreground">{round.year}</p>
+                        <p className="text-[10px] text-muted-foreground">#{index + 1}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-xs font-semibold text-muted-foreground">No rounds recorded for this game.</p>
+              )}
+            </GameCard>
           </>
         ) : room.state.phase === "REVEAL" ? (
           <>
             <GameCard className="relative overflow-hidden border-accent/30 p-6">
               <div className="absolute inset-x-0 top-0 h-1 bg-[hsl(var(--accent))]" />
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/10">
-                  <Music className="h-7 w-7 text-[hsl(var(--accent))]" />
-                </div>
-                <div>
+              <div className="flex flex-col gap-4">
+                {room.round.coverUrl ? (
+                  <img
+                    src={room.round.coverUrl}
+                    alt={`${room.round.title} cover art`}
+                    className="h-72 w-full rounded-xl border border-border object-cover md:h-80"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex h-72 w-full items-center justify-center rounded-xl bg-accent/10 md:h-80">
+                    <Music className="h-20 w-20 text-[hsl(var(--accent))]" />
+                  </div>
+                )}
+                <div className="text-center">
                   <p className="text-2xl font-bold text-card-foreground">{room.round.title}</p>
                   <p className="text-base font-semibold text-muted-foreground">{room.round.artist}</p>
                   <p className="mt-1 text-sm text-muted-foreground">Released in {room.round.year}</p>
@@ -586,33 +679,55 @@ export default function PlayGame({ params }: Route.ComponentProps) {
           <Card>
             <CardContent className="space-y-6 p-8 text-center">
               <div className="flex flex-col items-center gap-6">
-                <CatMascot variant="chill" size="lg" className="animate-float" />
-
                 <div>
                   <p className="text-xl font-bold text-card-foreground">Intermission</p>
                   <p className="text-sm text-muted-foreground">Quick vibe check before the next song</p>
                 </div>
 
-                <Equalizer className="h-8" />
+                <div className="w-full max-w-md rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.35)] p-3 text-left">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Song Revealed</p>
+                  <div className="space-y-3">
+                    {room.round.coverUrl ? (
+                      <img
+                        src={room.round.coverUrl}
+                        alt={`${room.round.title} cover art`}
+                        className="h-60 w-full rounded-lg border border-border object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-60 w-full items-center justify-center rounded-lg border border-border bg-muted/60">
+                        <Music className="h-16 w-16 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="min-w-0 text-center">
+                      <p className="line-clamp-2 text-xl font-bold text-card-foreground">{room.round.title}</p>
+                      <p className="line-clamp-1 text-base font-semibold text-muted-foreground">{room.round.artist}</p>
+                      <p className="mt-1 text-xs font-semibold text-muted-foreground">Released in {room.round.year}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative max-w-sm rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)] p-4">
+                  <div className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-b border-r border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)]" />
+                  <div className="relative">
+                    <Quote className="absolute -left-0.5 -top-0.5 h-4 w-4 text-[hsl(var(--primary)/0.4)]" />
+                    <Quote className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rotate-180 text-[hsl(var(--primary)/0.4)]" />
+                    <p className="pl-5 pr-5 text-sm italic leading-relaxed text-card-foreground">
+                      {intermissionQuote}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center gap-2">
+                  <CatMascot variant="chill" size="lg" className="animate-float" />
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Cat Wisdom</p>
+                </div>
 
                 <div className="flex items-center justify-center">
                   <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)]">
                     <span className="animate-count-pulse font-mono text-3xl font-bold text-[hsl(var(--primary))]">
                       {remainingSeconds}
                     </span>
-                  </div>
-                </div>
-
-                <div className="relative max-w-sm rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)] p-4">
-                  <div className="absolute -top-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-l border-t border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)]" />
-                  <div className="relative">
-                    <Quote className="absolute -left-0.5 -top-0.5 h-4 w-4 text-[hsl(var(--primary)/0.4)]" />
-                    <p className="pl-5 text-sm italic leading-relaxed text-card-foreground">
-                      {`"${intermissionQuote}"`}
-                    </p>
-                    <p className="mt-2 pl-5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Cat Wisdom
-                    </p>
                   </div>
                 </div>
               </div>
@@ -674,14 +789,57 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                       const nextValue = event.target.value;
                       setTrackQuery(nextValue);
                       setSelectedTrack(null);
+                      setTrackActiveSuggestionIndex(0);
                     }}
                     onFocus={() => {
                       setTrackInputFocused(true);
+                      setTrackActiveSuggestionIndex(0);
                     }}
                     onBlur={() => {
                       window.setTimeout(() => {
                         setTrackInputFocused(false);
+                        setTrackActiveSuggestionIndex(-1);
                       }, 120);
+                    }}
+                    onKeyDown={(event) => {
+                      if (!isTrackAutocompleteOpen || trackSuggestions.length === 0) {
+                        return;
+                      }
+
+                      if (event.key === "ArrowDown") {
+                        event.preventDefault();
+                        setTrackActiveSuggestionIndex((current) =>
+                          current < 0 ? 0 : (current + 1) % trackSuggestions.length,
+                        );
+                        return;
+                      }
+
+                      if (event.key === "ArrowUp") {
+                        event.preventDefault();
+                        setTrackActiveSuggestionIndex((current) =>
+                          current < 0
+                            ? trackSuggestions.length - 1
+                            : (current - 1 + trackSuggestions.length) % trackSuggestions.length,
+                        );
+                        return;
+                      }
+
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        const selectedIndex =
+                          trackActiveSuggestionIndex >= 0 ? trackActiveSuggestionIndex : 0;
+                        const suggestion = trackSuggestions[selectedIndex];
+                        if (suggestion) {
+                          selectTrackSuggestion(suggestion);
+                        }
+                        return;
+                      }
+
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setTrackInputFocused(false);
+                        setTrackActiveSuggestionIndex(-1);
+                      }
                     }}
                     autoComplete="off"
                     autoCorrect="off"
@@ -690,30 +848,43 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     inputMode="search"
                     aria-autocomplete="list"
                     aria-controls="track-guess-listbox"
-                    aria-expanded={
-                      canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2
+                    aria-expanded={isTrackAutocompleteOpen}
+                    aria-activedescendant={
+                      isTrackAutocompleteOpen && trackActiveSuggestionIndex >= 0
+                        ? `track-guess-option-${trackActiveSuggestionIndex}`
+                        : undefined
                     }
                     disabled={!canEditGuess}
                   />
-                  {canEditGuess && trackInputFocused && !selectedTrack && trackQuery.trim().length >= 2 ? (
+                  {isTrackAutocompleteOpen ? (
                     <ul
                       id="track-guess-listbox"
                       role="listbox"
                       className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
                     >
-                      {trackSuggestions.map((suggestion) => (
-                        <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">
+                      {trackSuggestions.map((suggestion, suggestionIndex) => (
+                        <li
+                          key={suggestion.id}
+                          className="border-b border-[hsl(var(--border))] last:border-b-0"
+                        >
                           <button
+                            id={`track-guess-option-${suggestionIndex}`}
                             type="button"
                             role="option"
-                            className="w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
+                            aria-selected={trackActiveSuggestionIndex === suggestionIndex}
+                            className={`w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)] ${
+                              trackActiveSuggestionIndex === suggestionIndex
+                                ? "bg-[hsl(var(--muted)/0.65)]"
+                                : ""
+                            }`}
                             onPointerDown={(event) => {
                               event.preventDefault();
                             }}
+                            onMouseEnter={() => {
+                              setTrackActiveSuggestionIndex(suggestionIndex);
+                            }}
                             onClick={() => {
-                              setSelectedTrack(suggestion);
-                              setTrackQuery(suggestion.display);
-                              setTrackInputFocused(false);
+                              selectTrackSuggestion(suggestion);
                             }}
                           >
                             {suggestion.display}
@@ -742,14 +913,57 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                       const nextValue = event.target.value;
                       setArtistQuery(nextValue);
                       setSelectedArtist(null);
+                      setArtistActiveSuggestionIndex(0);
                     }}
                     onFocus={() => {
                       setArtistInputFocused(true);
+                      setArtistActiveSuggestionIndex(0);
                     }}
                     onBlur={() => {
                       window.setTimeout(() => {
                         setArtistInputFocused(false);
+                        setArtistActiveSuggestionIndex(-1);
                       }, 120);
+                    }}
+                    onKeyDown={(event) => {
+                      if (!isArtistAutocompleteOpen || artistSuggestions.length === 0) {
+                        return;
+                      }
+
+                      if (event.key === "ArrowDown") {
+                        event.preventDefault();
+                        setArtistActiveSuggestionIndex((current) =>
+                          current < 0 ? 0 : (current + 1) % artistSuggestions.length,
+                        );
+                        return;
+                      }
+
+                      if (event.key === "ArrowUp") {
+                        event.preventDefault();
+                        setArtistActiveSuggestionIndex((current) =>
+                          current < 0
+                            ? artistSuggestions.length - 1
+                            : (current - 1 + artistSuggestions.length) % artistSuggestions.length,
+                        );
+                        return;
+                      }
+
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        const selectedIndex =
+                          artistActiveSuggestionIndex >= 0 ? artistActiveSuggestionIndex : 0;
+                        const suggestion = artistSuggestions[selectedIndex];
+                        if (suggestion) {
+                          selectArtistSuggestion(suggestion);
+                        }
+                        return;
+                      }
+
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setArtistInputFocused(false);
+                        setArtistActiveSuggestionIndex(-1);
+                      }
                     }}
                     autoComplete="off"
                     autoCorrect="off"
@@ -758,30 +972,43 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     inputMode="search"
                     aria-autocomplete="list"
                     aria-controls="artist-guess-listbox"
-                    aria-expanded={
-                      canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2
+                    aria-expanded={isArtistAutocompleteOpen}
+                    aria-activedescendant={
+                      isArtistAutocompleteOpen && artistActiveSuggestionIndex >= 0
+                        ? `artist-guess-option-${artistActiveSuggestionIndex}`
+                        : undefined
                     }
                     disabled={!canEditGuess}
                   />
-                  {canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2 ? (
+                  {isArtistAutocompleteOpen ? (
                     <ul
                       id="artist-guess-listbox"
                       role="listbox"
                       className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 max-h-40 overflow-y-auto rounded-xl border border-[hsl(var(--input))] bg-card shadow-md shadow-foreground/5"
                     >
-                      {artistSuggestions.map((suggestion) => (
-                        <li key={suggestion.id} className="border-b border-[hsl(var(--border))] last:border-b-0">
+                      {artistSuggestions.map((suggestion, suggestionIndex) => (
+                        <li
+                          key={suggestion.id}
+                          className="border-b border-[hsl(var(--border))] last:border-b-0"
+                        >
                           <button
+                            id={`artist-guess-option-${suggestionIndex}`}
                             type="button"
                             role="option"
-                            className="w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
+                            aria-selected={artistActiveSuggestionIndex === suggestionIndex}
+                            className={`w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)] ${
+                              artistActiveSuggestionIndex === suggestionIndex
+                                ? "bg-[hsl(var(--muted)/0.65)]"
+                                : ""
+                            }`}
                             onPointerDown={(event) => {
                               event.preventDefault();
                             }}
+                            onMouseEnter={() => {
+                              setArtistActiveSuggestionIndex(suggestionIndex);
+                            }}
                             onClick={() => {
-                              setSelectedArtist(suggestion);
-                              setArtistQuery(suggestion.display);
-                              setArtistInputFocused(false);
+                              selectArtistSuggestion(suggestion);
                             }}
                           >
                             {suggestion.display}
@@ -815,9 +1042,11 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   setSelectedTrack(null);
                   setTrackQuery("");
                   setTrackInputFocused(false);
+                  setTrackActiveSuggestionIndex(-1);
                   setSelectedArtist(null);
                   setArtistQuery("");
                   setArtistInputFocused(false);
+                  setArtistActiveSuggestionIndex(-1);
                 }}
                 disabled={!canEditGuess}
               >

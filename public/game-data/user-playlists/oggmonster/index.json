@@ -1,0 +1,35 @@
+{
+  "kind": "playlist-catalog",
+  "playlists": [
+    {
+      "id": "ebbas-quiz",
+      "name": "Ebbis quiz spelista",
+      "version": 1,
+      "sourcePlaylistId": "43a8JuTpeuR1EmANXNEDWn",
+      "sourcePlaylistName": "Ebbis quiz spelista",
+      "trackCount": 70,
+      "artistCount": 73,
+      "roundCount": 70
+    },
+    {
+      "id": "history-x",
+      "name": "music history x",
+      "version": 1,
+      "sourcePlaylistId": "668S35Hx0hP28ZfCplhAQA",
+      "sourcePlaylistName": "music history x",
+      "trackCount": 127,
+      "artistCount": 118,
+      "roundCount": 127
+    },
+    {
+      "id": "ida-spellista",
+      "name": "Idas spellista 🎶",
+      "version": 1,
+      "sourcePlaylistId": "2Vrztlbj9gjRRjJErA5M1z",
+      "sourcePlaylistName": "Idas spellista 🎶",
+      "trackCount": 70,
+      "artistCount": 83,
+      "roundCount": 70
+    }
+  ]
+}

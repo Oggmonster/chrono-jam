@@ -1,6 +1,6 @@
 import type { Route } from "./+types/results";
 import { Link } from "react-router";
-import { ArrowLeft, Crown, Home, Star, Trophy } from "lucide-react";
+import { ArrowLeft, Crown, Home, Music, Star, Trophy } from "lucide-react";
 
 import { CatMascot, GameCard, GameLayout } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -23,6 +23,7 @@ export default function Results({ params }: Route.ComponentProps) {
     }))
     .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
   const winner = ranking[0];
+  const songsPlayed = room.state.rounds;
 
   return (
     <GameLayout className="mx-auto max-w-lg">
@@ -81,6 +82,43 @@ export default function Results({ params }: Route.ComponentProps) {
             ))}
             {ranking.length === 0 ? <p className="text-sm text-muted-foreground">No players to rank yet.</p> : null}
           </div>
+        </GameCard>
+
+        <GameCard className="p-5">
+          <h3 className="mb-4 flex items-center gap-2 font-bold text-card-foreground">
+            <Music className="h-4 w-4 text-[hsl(var(--accent))]" />
+            Songs Played
+          </h3>
+          {songsPlayed.length > 0 ? (
+            <ol className="space-y-2">
+              {songsPlayed.map((round, index) => (
+                <li key={round.id} className="flex items-center gap-3 rounded-xl border border-border bg-muted/35 p-3">
+                  {round.coverUrl ? (
+                    <img
+                      src={round.coverUrl}
+                      alt={`${round.title} cover art`}
+                      className="h-12 w-12 shrink-0 rounded-md border border-border object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border bg-muted/60">
+                      <Music className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-card-foreground">{round.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">{round.artist}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-mono text-sm font-bold text-card-foreground">{round.year}</p>
+                    <p className="text-[10px] text-muted-foreground">#{index + 1}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-sm text-muted-foreground">No rounds recorded for this game.</p>
+          )}
         </GameCard>
 
         <div className="flex justify-center gap-3">

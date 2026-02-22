@@ -4,6 +4,12 @@ import {
   type AutocompleteIndex,
 } from "~/lib/autocomplete";
 import { mockRounds } from "~/lib/mock-room";
+import {
+  buildBasePlaylistSelectionId,
+  buildUserPlaylistSelectionId,
+  parsePlaylistSelectionId,
+} from "~/lib/playlist-selection";
+import { cleanTrackTitle } from "~/lib/track-metadata";
 
 export type CatalogEntry = {
   id: string;
@@ -19,18 +25,7 @@ export type GamePackRound = {
   year: number;
   spotifyUri: string;
   startMs: number;
-};
-
-type BaseBatteryAsset = {
-  kind: "base-battery";
-  version: number;
-  tracks: CatalogEntry[];
-  artists: CatalogEntry[];
-};
-
-type BaseBatteryVersionAsset = {
-  kind: "base-battery-version";
-  version: number;
+  coverUrl?: string;
 };
 
 type PlaylistPackAsset = {
@@ -62,7 +57,6 @@ export type GamePack = {
     createdAt: number;
     roundCount: number;
     playlistIds: string[];
-    batteryVersion: number;
   };
   rounds: GamePackRound[];
 };
@@ -81,6 +75,7 @@ type StoreMetaRecord = {
 
 type StoredPackRecord = {
   key: string;
+  selectionId: string;
   playlistId: string;
   version: number;
   hash: string;
@@ -90,12 +85,19 @@ type StoredPackRecord = {
 
 type DataSource = "cache" | "fresh";
 
+type PlaylistPackRequest = {
+  selectionId: string;
+  playlistId: string;
+  version: number;
+  fetchPath: string;
+};
+
 export type GamePackLoadResult = {
   pack: GamePack;
   source: "cache" | "fresh" | "mixed" | "memory";
 };
 
-export const defaultPlaylistIds = ["core-pop"] as const;
+export const defaultPlaylistIds: string[] = [];
 
 const dbName = "chronojam-catalog-cache";
 const dbVersion = 1;
@@ -103,7 +105,6 @@ const storeMeta = "meta";
 const storeTracks = "tracks";
 const storeArtists = "artists";
 const storePacks = "packs";
-const defaultBaseBatteryVersion = 1;
 let cachedAutocompletePack: { key: string; pack: CatalogAutocompletePack } | null = null;
 
 function fnv1a(input: string) {
@@ -178,6 +179,33 @@ async function fetchJsonAsset<T>(path: string) {
   return (await response.json()) as T;
 }
 
+function sanitizeCatalogEntry(entry: CatalogEntry): CatalogEntry {
+  const id = entry.id.trim();
+  const display = cleanTrackTitle(entry.display);
+  return {
+    id,
+    display: display || entry.display.trim(),
+  };
+}
+
+function sanitizeRound(round: GamePackRound): GamePackRound {
+  const trackName = cleanTrackTitle(round.trackName);
+  const coverUrl = typeof round.coverUrl === "string" && round.coverUrl.trim().length > 0 ? round.coverUrl.trim() : undefined;
+  return {
+    ...round,
+    trackName: trackName || round.trackName.trim(),
+    coverUrl,
+  };
+}
+
+function sanitizePlaylistPack(asset: PlaylistPackAsset): PlaylistPackAsset {
+  return {
+    ...asset,
+    tracks: asset.tracks.map(sanitizeCatalogEntry),
+    rounds: asset.rounds.map(sanitizeRound),
+  };
+}
+
 async function readMeta(db: IDBDatabase, key: string) {
   const tx = db.transaction(storeMeta, "readonly");
   const request = tx.objectStore(storeMeta).get(key);
@@ -192,18 +220,19 @@ async function writeMeta(db: IDBDatabase, meta: StoreMetaRecord) {
   await transactionDone(tx);
 }
 
-async function readStoredPlaylistPack(db: IDBDatabase, playlistId: string, version: number) {
+async function readStoredPlaylistPack(db: IDBDatabase, selectionId: string) {
   const tx = db.transaction(storePacks, "readonly");
-  const request = tx.objectStore(storePacks).get(`playlist:${playlistId}:v${version}`);
+  const request = tx.objectStore(storePacks).get(`selection:${selectionId}`);
   const value = (await requestPromise(request)) as StoredPackRecord | undefined;
   await transactionDone(tx);
   return value?.pack ?? null;
 }
 
-async function writeStoredPlaylistPack(db: IDBDatabase, asset: PlaylistPackAsset, hash: string) {
+async function writeStoredPlaylistPack(db: IDBDatabase, selectionId: string, asset: PlaylistPackAsset, hash: string) {
   const tx = db.transaction(storePacks, "readwrite");
   const record: StoredPackRecord = {
-    key: `playlist:${asset.playlistId}:v${asset.version}`,
+    key: `selection:${selectionId}`,
+    selectionId,
     playlistId: asset.playlistId,
     version: asset.version,
     hash,
@@ -230,6 +259,7 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
 
   const knownIds = new Set(existing.map((entry) => entry.id));
   const knownNormDisplays = new Set(existing.map((entry) => normalizeForAutocomplete(entry.display)));
+  const existingById = new Map(existing.map((entry) => [entry.id, entry] as const));
   const tx = db.transaction(storeName, "readwrite");
   const store = tx.objectStore(storeName);
 
@@ -245,7 +275,21 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
       continue;
     }
 
-    if (knownIds.has(id) || knownNormDisplays.has(normDisplay)) {
+    const existingEntry = existingById.get(id);
+    if (existingEntry) {
+      if (existingEntry.display !== display) {
+        store.put({ id, display });
+        const existingNorm = normalizeForAutocomplete(existingEntry.display);
+        if (existingNorm) {
+          knownNormDisplays.delete(existingNorm);
+        }
+        knownNormDisplays.add(normDisplay);
+        existingById.set(id, { id, display });
+      }
+      continue;
+    }
+
+    if (knownNormDisplays.has(normDisplay)) {
       continue;
     }
 
@@ -257,53 +301,7 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
   await transactionDone(tx);
 }
 
-async function resolveBaseBatteryVersion() {
-  try {
-    const asset = await fetchJsonAsset<BaseBatteryVersionAsset>("/game-data/base-battery.latest.json");
-    if (
-      asset.kind === "base-battery-version" &&
-      Number.isFinite(asset.version) &&
-      asset.version >= 1
-    ) {
-      return Math.floor(asset.version);
-    }
-  } catch {
-    // Fall through to default static version.
-  }
-
-  return defaultBaseBatteryVersion;
-}
-
-async function ensureBaseBattery(
-  db: IDBDatabase,
-  version: number,
-): Promise<{ source: DataSource; hash: string; version: number }> {
-  const metaKey = "base-battery";
-  const existing = await readMeta(db, metaKey);
-  if (existing && existing.version === version && existing.hash) {
-    return { source: "cache", hash: existing.hash, version };
-  }
-
-  const asset = await fetchJsonAsset<BaseBatteryAsset>(`/game-data/base-battery.v${version}.json`);
-  if (asset.kind !== "base-battery" || asset.version !== version) {
-    throw new Error("Invalid base battery asset");
-  }
-
-  await mergeCatalogEntries(db, storeTracks, asset.tracks);
-  await mergeCatalogEntries(db, storeArtists, asset.artists);
-
-  const hash = stableHash(asset);
-  await writeMeta(db, {
-    key: metaKey,
-    version: asset.version,
-    hash,
-    updatedAt: Date.now(),
-  });
-
-  return { source: "fresh", hash, version };
-}
-
-async function resolvePlaylistPackVersions(playlistIds: string[]) {
+async function resolveLegacyPlaylistPackVersions(playlistIds: string[]) {
   const defaultVersions = Object.fromEntries(playlistIds.map((playlistId) => [playlistId, 1] as const)) as Record<
     string,
     number
@@ -339,37 +337,123 @@ async function resolvePlaylistPackVersions(playlistIds: string[]) {
   }
 }
 
+async function resolveDefaultPlaylistIdsFromCatalog() {
+  try {
+    const catalog = await fetchJsonAsset<PlaylistCatalogAsset>("/game-data/playlists/index.json");
+    if (catalog.kind !== "playlist-catalog" || !Array.isArray(catalog.playlists)) {
+      return [...defaultPlaylistIds];
+    }
+
+    const firstPlaylist = catalog.playlists.find(
+      (entry) =>
+        typeof entry?.id === "string" &&
+        entry.id.trim().length > 0 &&
+        typeof entry?.version === "number" &&
+        Number.isFinite(entry.version) &&
+        entry.version >= 1,
+    );
+
+    if (!firstPlaylist) {
+      return [...defaultPlaylistIds];
+    }
+
+    return [buildBasePlaylistSelectionId(firstPlaylist.id.trim(), Math.floor(firstPlaylist.version))];
+  } catch {
+    return [...defaultPlaylistIds];
+  }
+}
+
+function trimUniquePlaylistIds(playlistIds: string[]) {
+  const sanitized = playlistIds
+    .map((playlistId) => playlistId.trim())
+    .filter((playlistId) => playlistId.length > 0);
+  return [...new Set(sanitized)];
+}
+
+async function buildPlaylistPackRequests(playlistIds: string[]) {
+  const uniquePlaylistIds = trimUniquePlaylistIds(playlistIds);
+  const legacyPlaylistIds = uniquePlaylistIds.filter((playlistId) => parsePlaylistSelectionId(playlistId) === null);
+  const legacyVersions = legacyPlaylistIds.length > 0
+    ? await resolveLegacyPlaylistPackVersions(legacyPlaylistIds)
+    : {};
+
+  const requests: PlaylistPackRequest[] = [];
+  for (const requestedId of uniquePlaylistIds) {
+    const parsed = parsePlaylistSelectionId(requestedId);
+    if (parsed) {
+      if (parsed.scope === "base") {
+        requests.push({
+          selectionId: buildBasePlaylistSelectionId(parsed.playlistId, parsed.version),
+          playlistId: parsed.playlistId,
+          version: parsed.version,
+          fetchPath: `/game-data/playlists/${parsed.playlistId}.v${parsed.version}.json`,
+        });
+      } else {
+        requests.push({
+          selectionId: buildUserPlaylistSelectionId(parsed.ownerSpotifyUserId, parsed.playlistId, parsed.version),
+          playlistId: parsed.playlistId,
+          version: parsed.version,
+          fetchPath:
+            `/game-data/user-playlists/${encodeURIComponent(parsed.ownerSpotifyUserId)}` +
+            `/${parsed.playlistId}.v${parsed.version}.json`,
+        });
+      }
+      continue;
+    }
+
+    try {
+      const version = legacyVersions[requestedId] ?? 1;
+      requests.push({
+        selectionId: buildBasePlaylistSelectionId(requestedId, version),
+        playlistId: requestedId,
+        version,
+        fetchPath: `/game-data/playlists/${requestedId}.v${version}.json`,
+      });
+    } catch {
+      // Skip invalid legacy identifiers.
+    }
+  }
+
+  const bySelectionId = new Map<string, PlaylistPackRequest>();
+  for (const request of requests) {
+    bySelectionId.set(request.selectionId, request);
+  }
+
+  return [...bySelectionId.values()];
+}
+
 async function ensurePlaylistPack(
   db: IDBDatabase,
-  playlistId: string,
-  version: number,
+  request: PlaylistPackRequest,
 ): Promise<{ source: DataSource; hash: string; pack: PlaylistPackAsset }> {
-  const metaKey = `playlist-pack:${playlistId}`;
+  const metaKey = `playlist-pack:${request.selectionId}`;
   const existing = await readMeta(db, metaKey);
-  if (existing && existing.version === version) {
-    const cachedPack = await readStoredPlaylistPack(db, playlistId, version);
+  if (existing && existing.version === request.version) {
+    const cachedPack = await readStoredPlaylistPack(db, request.selectionId);
     if (cachedPack) {
+      const sanitizedCachedPack = sanitizePlaylistPack(cachedPack);
       return {
         source: "cache",
         hash: existing.hash,
-        pack: cachedPack,
+        pack: sanitizedCachedPack,
       };
     }
   }
 
-  const asset = await fetchJsonAsset<PlaylistPackAsset>(`/game-data/playlists/${playlistId}.v${version}.json`);
-  if (asset.kind !== "playlist-pack" || asset.playlistId !== playlistId || asset.version !== version) {
-    throw new Error(`Invalid playlist pack: ${playlistId}`);
+  const asset = await fetchJsonAsset<PlaylistPackAsset>(request.fetchPath);
+  if (asset.kind !== "playlist-pack" || asset.playlistId !== request.playlistId || asset.version !== request.version) {
+    throw new Error(`Invalid playlist pack: ${request.selectionId}`);
   }
+  const sanitizedAsset = sanitizePlaylistPack(asset);
 
-  await mergeCatalogEntries(db, storeTracks, asset.tracks);
-  await mergeCatalogEntries(db, storeArtists, asset.artists);
+  await mergeCatalogEntries(db, storeTracks, sanitizedAsset.tracks);
+  await mergeCatalogEntries(db, storeArtists, sanitizedAsset.artists);
 
-  const hash = stableHash(asset);
-  await writeStoredPlaylistPack(db, asset, hash);
+  const hash = stableHash(sanitizedAsset);
+  await writeStoredPlaylistPack(db, request.selectionId, sanitizedAsset, hash);
   await writeMeta(db, {
     key: metaKey,
-    version: asset.version,
+    version: request.version,
     hash,
     updatedAt: Date.now(),
   });
@@ -377,7 +461,7 @@ async function ensurePlaylistPack(
   return {
     source: "fresh",
     hash,
-    pack: asset,
+    pack: sanitizedAsset,
   };
 }
 
@@ -391,6 +475,7 @@ function fallbackGamePack(roomId: string): GamePack {
     year: round.year,
     spotifyUri: round.spotifyUri,
     startMs: round.startMs,
+    coverUrl: round.coverUrl,
   }));
 
   return {
@@ -401,7 +486,6 @@ function fallbackGamePack(roomId: string): GamePack {
       createdAt: Date.now(),
       roundCount: rounds.length,
       playlistIds: [...defaultPlaylistIds],
-      batteryVersion: defaultBaseBatteryVersion,
     },
     rounds,
   };
@@ -411,35 +495,42 @@ export async function loadGamePack(
   roomId: string,
   playlistIds: string[] = [...defaultPlaylistIds],
 ): Promise<GamePackLoadResult> {
+  let db: IDBDatabase | null = null;
   try {
-    const db = await openCatalogDb();
-    const safePlaylistIds = playlistIds.length > 0 ? playlistIds : [...defaultPlaylistIds];
-    const baseBatteryVersion = await resolveBaseBatteryVersion();
-    const battery = await ensureBaseBattery(db, baseBatteryVersion);
-    const playlistVersions = await resolvePlaylistPackVersions(safePlaylistIds);
+    db = await openCatalogDb();
+    const initialPlaylistIds = playlistIds.length > 0 ? playlistIds : await resolveDefaultPlaylistIdsFromCatalog();
+    if (initialPlaylistIds.length === 0) {
+      return {
+        pack: fallbackGamePack(roomId),
+        source: "memory",
+      };
+    }
+    const playlistRequests = await buildPlaylistPackRequests(initialPlaylistIds);
+    if (playlistRequests.length === 0) {
+      return {
+        pack: fallbackGamePack(roomId),
+        source: "memory",
+      };
+    }
+
     const playlistResults = await Promise.all(
-      safePlaylistIds.map((playlistId) =>
-        ensurePlaylistPack(db, playlistId, playlistVersions[playlistId] ?? 1),
-      ),
+      playlistRequests.map((request) => ensurePlaylistPack(db!, request)),
     );
 
     const allRounds = playlistResults.flatMap((result) => result.pack.rounds);
     const dedupedRounds = Array.from(new Map(allRounds.map((round) => [round.roundId, round] as const)).values());
     const combinedHash = stableHash({
-      batteryHash: battery.hash,
       packs: playlistResults.map((result) => result.hash).sort(),
       roundIds: dedupedRounds.map((round) => round.roundId),
     });
 
-    const sources = [battery.source, ...playlistResults.map((result) => result.source)];
+    const sources = playlistResults.map((result) => result.source);
     const source: GamePackLoadResult["source"] =
       sources.every((item) => item === "cache")
         ? "cache"
         : sources.every((item) => item === "fresh")
           ? "fresh"
           : "mixed";
-
-    db.close();
     return {
       pack: {
         meta: {
@@ -448,8 +539,7 @@ export async function loadGamePack(
           hash: combinedHash,
           createdAt: Date.now(),
           roundCount: dedupedRounds.length,
-          playlistIds: safePlaylistIds,
-          batteryVersion: battery.version,
+          playlistIds: playlistRequests.map((request) => request.selectionId),
         },
         rounds: dedupedRounds,
       },
@@ -460,6 +550,8 @@ export async function loadGamePack(
       pack: fallbackGamePack(roomId),
       source: "memory",
     };
+  } finally {
+    db?.close();
   }
 }
 

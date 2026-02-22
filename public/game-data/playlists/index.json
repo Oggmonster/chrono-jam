@@ -2,52 +2,44 @@
   "kind": "playlist-catalog",
   "playlists": [
     {
-      "id": "core-pop",
-      "name": "Core Pop",
-      "version": 1,
-      "trackCount": 5,
-      "artistCount": 5,
-      "roundCount": 5
+      "id": "60s",
+      "name": "60s",
+      "version": 2,
+      "sourcePlaylistId": "3HJwuMdumqoeQb7NBG7YfC",
+      "sourcePlaylistName": "60s",
+      "trackCount": 503,
+      "artistCount": 246,
+      "roundCount": 503
     },
     {
-      "id": "ebba-quiz",
-      "name": "Ebbis quiz spelista",
-      "version": 1,
-      "sourcePlaylistId": "43a8JuTpeuR1EmANXNEDWn",
-      "sourcePlaylistName": "Ebbis quiz spelista",
-      "trackCount": 70,
-      "artistCount": 73,
-      "roundCount": 70
+      "id": "70s",
+      "name": "70s",
+      "version": 2,
+      "sourcePlaylistId": "3Gbk04hSzBmQ7X2C8bUksZ",
+      "sourcePlaylistName": "70s",
+      "trackCount": 344,
+      "artistCount": 218,
+      "roundCount": 345
     },
     {
-      "id": "ebbas-spellista",
-      "name": "Ebbas spellista ",
-      "version": 1,
-      "sourcePlaylistId": "2C8g4hz33J1n68qvnI9p5N",
-      "sourcePlaylistName": "Ebbas spellista ",
-      "trackCount": 320,
-      "artistCount": 355,
-      "roundCount": 320
+      "id": "80s",
+      "name": "80s",
+      "version": 2,
+      "sourcePlaylistId": "4qjxtJDQ7gV9R2JTGkmhPG",
+      "sourcePlaylistName": "80s",
+      "trackCount": 457,
+      "artistCount": 251,
+      "roundCount": 457
     },
     {
-      "id": "idas-lista",
-      "name": "Idas spellista 🎶",
-      "version": 1,
-      "sourcePlaylistId": "2Vrztlbj9gjRRjJErA5M1z",
-      "sourcePlaylistName": "Idas spellista 🎶",
-      "trackCount": 65,
-      "artistCount": 77,
-      "roundCount": 65
-    },
-    {
-      "id": "mega-mix",
-      "name": "Jobba, jobba, jobba",
-      "version": 1,
-      "sourcePlaylistId": "2SV5isuD93zA7CH2cgg11o",
-      "sourcePlaylistName": "Jobba, jobba, jobba",
-      "trackCount": 353,
-      "artistCount": 338,
-      "roundCount": 353
+      "id": "90s",
+      "name": "90s",
+      "version": 2,
+      "sourcePlaylistId": "2rp6DqdLZwwsMxd7Sb7zHB",
+      "sourcePlaylistName": "90s",
+      "trackCount": 614,
+      "artistCount": 368,
+      "roundCount": 614
     },
     {
       "id": "mello",

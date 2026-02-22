@@ -2,6 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { mockRounds } from "~/lib/mock-room";
+import {
+  buildBasePlaylistSelectionId,
+  buildUserPlaylistSelectionId,
+  parsePlaylistSelectionId,
+} from "~/lib/playlist-selection";
+import { cleanTrackTitle } from "~/lib/track-metadata";
 
 export type PlaylistRound = {
   id: string;
@@ -12,11 +18,12 @@ export type PlaylistRound = {
   year: number;
   spotifyUri: string;
   startMs: number;
+  coverUrl?: string;
 };
 
-const playlistDataDir = path.join(process.cwd(), "public", "game-data", "playlists");
-const playlistCatalogPath = path.join(playlistDataDir, "index.json");
-export const defaultPlaylistIds = ["core-pop"] as const;
+const basePlaylistDataDir = path.join(process.cwd(), "public", "game-data", "playlists");
+const basePlaylistCatalogPath = path.join(basePlaylistDataDir, "index.json");
+const userPlaylistDataDir = path.join(process.cwd(), "public", "game-data", "user-playlists");
 
 type PlaylistCatalogAsset = {
   kind: "playlist-catalog";
@@ -39,15 +46,15 @@ type PlaylistPackAsset = {
     year: number;
     spotifyUri: string;
     startMs: number;
+    coverUrl?: string;
   }>;
 };
 
-function normalizePlaylistIds(playlistIds: string[]) {
+function trimUniquePlaylistIds(playlistIds: string[]) {
   const sanitized = playlistIds
     .map((playlistId) => playlistId.trim())
     .filter((playlistId) => playlistId.length > 0);
-  const unique = [...new Set(sanitized)];
-  return unique.length > 0 ? unique : [...defaultPlaylistIds];
+  return [...new Set(sanitized)];
 }
 
 function fallbackRounds(): PlaylistRound[] {
@@ -60,6 +67,7 @@ function fallbackRounds(): PlaylistRound[] {
     year: round.year,
     spotifyUri: round.spotifyUri,
     startMs: round.startMs,
+    coverUrl: round.coverUrl,
   }));
 }
 
@@ -76,7 +84,7 @@ let cachedVersionMapMtimeMs = -1;
 
 function loadVersionMap() {
   try {
-    const stats = fs.statSync(playlistCatalogPath);
+    const stats = fs.statSync(basePlaylistCatalogPath);
     if (cachedVersionMap && stats.mtimeMs === cachedVersionMapMtimeMs) {
       return cachedVersionMap;
     }
@@ -89,7 +97,7 @@ function loadVersionMap() {
     return cachedVersionMap;
   }
 
-  const raw = safeReadJson(playlistCatalogPath);
+  const raw = safeReadJson(basePlaylistCatalogPath);
   if (!raw || typeof raw !== "object") {
     cachedVersionMap = new Map<string, number>();
     return cachedVersionMap;
@@ -120,18 +128,118 @@ function loadVersionMap() {
   return cachedVersionMap;
 }
 
+export function resolveDefaultPlaylistIds() {
+  const versionMap = loadVersionMap();
+  const firstPlaylistId = versionMap.keys().next().value as string | undefined;
+  if (!firstPlaylistId) {
+    return [];
+  }
+
+  const firstVersion = versionMap.get(firstPlaylistId) ?? 1;
+  return [buildBasePlaylistSelectionId(firstPlaylistId, firstVersion)];
+}
+
+export function normalizePlaylistIdsForCatalog(playlistIds: string[]) {
+  const unique = trimUniquePlaylistIds(playlistIds);
+  const versionMap = loadVersionMap();
+  const normalized: string[] = [];
+
+  for (const playlistId of unique) {
+    const parsedSelection = parsePlaylistSelectionId(playlistId);
+    if (parsedSelection) {
+      if (parsedSelection.scope === "base") {
+        normalized.push(buildBasePlaylistSelectionId(parsedSelection.playlistId, parsedSelection.version));
+      } else {
+        normalized.push(
+          buildUserPlaylistSelectionId(
+            parsedSelection.ownerSpotifyUserId,
+            parsedSelection.playlistId,
+            parsedSelection.version,
+          ),
+        );
+      }
+      continue;
+    }
+
+    const legacyVersion = versionMap.get(playlistId);
+    if (!legacyVersion) {
+      continue;
+    }
+
+    normalized.push(buildBasePlaylistSelectionId(playlistId, legacyVersion));
+  }
+
+  const deduped = [...new Set(normalized)];
+  if (deduped.length > 0) {
+    return deduped;
+  }
+
+  return resolveDefaultPlaylistIds();
+}
+
 const packRoundCache = new Map<string, PlaylistRound[]>();
 const playlistRoundCache = new Map<string, PlaylistRound[]>();
 
-function loadPackRounds(playlistId: string, version: number) {
-  const cacheKey = `${playlistId}:v${version}`;
-  const cached = packRoundCache.get(cacheKey);
+type PlaylistPackReference = {
+  selectionId: string;
+  playlistId: string;
+  version: number;
+  packPath: string;
+};
+
+function resolvePackReference(selectionId: string, versionMap: Map<string, number>): PlaylistPackReference | null {
+  const parsedSelection = parsePlaylistSelectionId(selectionId);
+  if (parsedSelection) {
+    if (parsedSelection.scope === "base") {
+      return {
+        selectionId: buildBasePlaylistSelectionId(parsedSelection.playlistId, parsedSelection.version),
+        playlistId: parsedSelection.playlistId,
+        version: parsedSelection.version,
+        packPath: path.join(basePlaylistDataDir, `${parsedSelection.playlistId}.v${parsedSelection.version}.json`),
+      };
+    }
+
+    return {
+      selectionId: buildUserPlaylistSelectionId(
+        parsedSelection.ownerSpotifyUserId,
+        parsedSelection.playlistId,
+        parsedSelection.version,
+      ),
+      playlistId: parsedSelection.playlistId,
+      version: parsedSelection.version,
+      packPath: path.join(
+        userPlaylistDataDir,
+        parsedSelection.ownerSpotifyUserId,
+        `${parsedSelection.playlistId}.v${parsedSelection.version}.json`,
+      ),
+    };
+  }
+
+  const legacyId = selectionId.trim();
+  if (!legacyId) {
+    return null;
+  }
+
+  const version = versionMap.get(legacyId);
+  if (!version) {
+    return null;
+  }
+
+  return {
+    selectionId: buildBasePlaylistSelectionId(legacyId, version),
+    playlistId: legacyId,
+    version,
+    packPath: path.join(basePlaylistDataDir, `${legacyId}.v${version}.json`),
+  };
+}
+
+function loadPackRounds(reference: PlaylistPackReference) {
+  const cached = packRoundCache.get(reference.selectionId);
   if (cached) {
     return cached;
   }
 
-  const packPath = path.join(playlistDataDir, `${playlistId}.v${version}.json`);
-  const raw = safeReadJson(packPath);
+  const raw = safeReadJson(reference.packPath);
   if (!raw || typeof raw !== "object") {
     return [];
   }
@@ -139,8 +247,8 @@ function loadPackRounds(playlistId: string, version: number) {
   const asset = raw as Partial<PlaylistPackAsset>;
   if (
     asset.kind !== "playlist-pack" ||
-    asset.playlistId !== playlistId ||
-    asset.version !== version ||
+    asset.playlistId !== reference.playlistId ||
+    asset.version !== reference.version ||
     !Array.isArray(asset.rounds)
   ) {
     return [];
@@ -170,7 +278,7 @@ function loadPackRounds(playlistId: string, version: number) {
     rounds.push({
       id: rawRound.roundId.trim(),
       trackId: rawRound.trackId.trim(),
-      title: rawRound.trackName.trim(),
+      title: cleanTrackTitle(rawRound.trackName.trim()) || rawRound.trackName.trim(),
       artistId: rawRound.artistId.trim(),
       artist: rawRound.artistName.trim(),
       year: Math.floor(rawRound.year),
@@ -179,15 +287,19 @@ function loadPackRounds(playlistId: string, version: number) {
         typeof rawRound.startMs === "number" && Number.isFinite(rawRound.startMs)
           ? Math.max(0, Math.floor(rawRound.startMs))
           : 0,
+      coverUrl:
+        typeof rawRound.coverUrl === "string" && rawRound.coverUrl.trim().length > 0
+          ? rawRound.coverUrl.trim()
+          : undefined,
     });
   }
 
-  packRoundCache.set(cacheKey, rounds);
+  packRoundCache.set(reference.selectionId, rounds);
   return rounds;
 }
 
 export function loadRoundsForPlaylistIds(playlistIds: string[]) {
-  const normalizedIds = normalizePlaylistIds(playlistIds);
+  const normalizedIds = normalizePlaylistIdsForCatalog(playlistIds);
   const cacheKey = normalizedIds.join(",");
   const cached = playlistRoundCache.get(cacheKey);
   if (cached) {
@@ -197,9 +309,13 @@ export function loadRoundsForPlaylistIds(playlistIds: string[]) {
   const versionMap = loadVersionMap();
   const byRoundId = new Map<string, PlaylistRound>();
 
-  for (const playlistId of normalizedIds) {
-    const version = versionMap.get(playlistId) ?? 1;
-    const packRounds = loadPackRounds(playlistId, version);
+  for (const selectionId of normalizedIds) {
+    const reference = resolvePackReference(selectionId, versionMap);
+    if (!reference) {
+      continue;
+    }
+
+    const packRounds = loadPackRounds(reference);
     for (const round of packRounds) {
       if (!byRoundId.has(round.id)) {
         byRoundId.set(round.id, round);
