@@ -19,6 +19,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Game" }];
 }
 
+const FINAL_STANDINGS_ANTHEM_URI = "spotify:track:6GxhckZeqoWNF9n9XS91HS";
+
 export default function HostGame({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
   const room = useRoomState(roomId, "host");
@@ -183,7 +185,41 @@ export default function HostGame({ params }: Route.ComponentProps) {
   ]);
 
   useEffect(() => {
-    if (room.state.lifecycle === "running") {
+    if (room.state.lifecycle !== "finished") {
+      return;
+    }
+
+    const autoplayKey = `finished:${roomId}:${room.state.roundIndex}`;
+    let disposed = false;
+
+    const attemptPlay = async () => {
+      if (disposed) {
+        return;
+      }
+
+      if (autoPlayedRef.current === autoplayKey && !spotifyError) {
+        return;
+      }
+
+      const played = await playSpotifyTrack(FINAL_STANDINGS_ANTHEM_URI, 0);
+      if (played) {
+        autoPlayedRef.current = autoplayKey;
+      }
+    };
+
+    void attemptPlay();
+    const retryTimer = window.setInterval(() => {
+      void attemptPlay();
+    }, 1500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(retryTimer);
+    };
+  }, [room.state.lifecycle, room.state.roundIndex, roomId, playSpotifyTrack, spotifyError]);
+
+  useEffect(() => {
+    if (room.state.lifecycle === "running" || room.state.lifecycle === "finished") {
       return;
     }
 
@@ -396,7 +432,15 @@ export default function HostGame({ params }: Route.ComponentProps) {
                       <Radio className="h-3.5 w-3.5" />
                       Init SDK
                     </Button>
-                    <Button size="sm" onClick={() => void playSpotifyTrack(room.round.spotifyUri, room.round.startMs)}>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        void playSpotifyTrack(
+                          finishedGame ? FINAL_STANDINGS_ANTHEM_URI : room.round.spotifyUri,
+                          finishedGame ? 0 : room.round.startMs,
+                        )
+                      }
+                    >
                       <FastForward className="h-3.5 w-3.5" />
                       Force Play
                     </Button>

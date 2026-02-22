@@ -465,7 +465,9 @@ export default function PlayGame({ params }: Route.ComponentProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Badge variant="listening">Round {room.state.roundIndex + 1}</Badge>
-            <Badge variant="default">Score {currentScore}</Badge>
+            <Badge variant="default">
+              {playerSession ? `Score ${currentScore} · ${playerSession.name}` : `Score ${currentScore}`}
+            </Badge>
           </div>
           <Badge variant={finishedGame ? "danger" : room.state.phase === "LISTEN" ? "warning" : room.state.phase === "REVEAL" ? "success" : "warning"}>
             {finishedGame ? "Final" : phaseLabel(room.state.phase)}
