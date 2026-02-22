@@ -31,6 +31,7 @@
 
   --font-sans: "Space Grotesk", "Segoe UI", sans-serif;
   --font-mono: "Space Mono", "Consolas", monospace;
+  --font-display: "Bungee", "Space Grotesk", "Segoe UI", sans-serif;
 }
 
 @theme inline {
@@ -55,6 +56,7 @@
   --color-ring: hsl(var(--ring));
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
 }
 
 * {
@@ -204,6 +206,40 @@ a:where(:not([class])) {
 
 .animate-equalizer {
   animation: equalizer 0.8s ease-in-out infinite;
+}
+
+.home-brand-lockup {
+  filter: drop-shadow(0 12px 22px hsl(230 20% 18% / 0.12));
+}
+
+.home-brand-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.8rem, 11vw, 4.75rem);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+}
+
+.home-brand-chrono,
+.home-brand-jam {
+  display: inline-block;
+  -webkit-text-stroke: 1px hsl(230 30% 14% / 0.2);
+}
+
+.home-brand-chrono {
+  color: hsl(174 65% 38%);
+  text-shadow:
+    0 2px 0 hsl(174 70% 24% / 0.75),
+    0 8px 18px hsl(174 52% 34% / 0.34);
+}
+
+.home-brand-jam {
+  margin-left: 0.2ch;
+  color: hsl(4 85% 62%);
+  text-shadow:
+    0 2px 0 hsl(4 75% 40% / 0.75),
+    0 8px 18px hsl(4 75% 45% / 0.35);
 }
 
 .stagger-children > * {
