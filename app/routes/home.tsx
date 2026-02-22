@@ -36,10 +36,10 @@ export default function Home() {
                   Set up a room, pick a playlist, and control the game. Requires Spotify Premium.
                 </p>
                 <Link
-                  to="/host/setup"
+                  to="/host/lobby"
                   className="mt-4 inline-flex h-11 items-center justify-center rounded-md bg-[hsl(var(--primary))] px-8 text-sm font-bold text-white shadow-md shadow-[hsl(var(--primary)/0.2)] transition-colors hover:bg-[hsl(var(--primary)/0.9)]"
                 >
-                  Open Host Setup
+                  Open Host Lobby
                 </Link>
               </div>
             </div>

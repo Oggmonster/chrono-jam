@@ -1,13 +1,12 @@
 export const spotifyTokenKey = "chronojam:spotify-access-token";
 export const spotifyTokenExpiryKey = "chronojam:spotify-access-token-expiry";
 
-type RefreshPayload = {
+export type StoredSpotifyToken = {
   accessToken: string;
-  expiresIn: number;
-  source?: string;
+  expiresAt: number;
 };
 
-export function readStoredSpotifyToken() {
+export function readStoredSpotifyToken(): StoredSpotifyToken {
   if (typeof window === "undefined") {
     return { accessToken: "", expiresAt: 0 };
   }
@@ -22,8 +21,15 @@ export function storeSpotifyToken(accessToken: string, expiresInSeconds: number)
     return;
   }
 
-  const expiresAt = Date.now() + expiresInSeconds * 1000;
-  window.localStorage.setItem(spotifyTokenKey, accessToken);
+  const trimmedToken = accessToken.trim();
+  const safeExpiresIn = Math.max(1, Math.floor(expiresInSeconds));
+  if (!trimmedToken) {
+    clearStoredSpotifyToken();
+    return;
+  }
+
+  const expiresAt = Date.now() + safeExpiresIn * 1000;
+  window.localStorage.setItem(spotifyTokenKey, trimmedToken);
   window.localStorage.setItem(spotifyTokenExpiryKey, String(expiresAt));
 }
 
@@ -36,44 +42,25 @@ export function clearStoredSpotifyToken() {
   window.localStorage.removeItem(spotifyTokenExpiryKey);
 }
 
-export async function refreshSpotifyAccessToken(): Promise<RefreshPayload> {
-  const response = await fetch("/auth/spotify/refresh", {
-    method: "GET",
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Refresh failed (${response.status})`);
-  }
-
-  const payload = (await response.json()) as RefreshPayload;
-  if (!payload.accessToken || !payload.expiresIn) {
-    throw new Error("Invalid refresh response.");
-  }
-
-  storeSpotifyToken(payload.accessToken, payload.expiresIn);
-  return payload;
-}
-
-export async function resolveSpotifyAccessToken(): Promise<RefreshPayload> {
-  const response = await fetch("/auth/spotify/token", {
-    method: "GET",
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Token resolve failed (${response.status})`);
-  }
-
-  const payload = (await response.json()) as RefreshPayload;
-  if (!payload.accessToken || !payload.expiresIn) {
-    throw new Error("Invalid token response.");
-  }
-
-  storeSpotifyToken(payload.accessToken, payload.expiresIn);
-  return payload;
-}
-
 export function isTokenExpiring(expiresAt: number, thresholdMs = 60_000) {
   return !expiresAt || Date.now() + thresholdMs >= expiresAt;
+}
+
+export function getStoredSpotifyTokenStatus(thresholdMs = 60_000) {
+  const stored = readStoredSpotifyToken();
+  const now = Date.now();
+  const remainingMs = Math.max(0, stored.expiresAt - now);
+  const missing = !stored.accessToken;
+  const expired = !missing && stored.expiresAt <= now;
+  const expiring = !missing && isTokenExpiring(stored.expiresAt, thresholdMs);
+  const usable = !missing && !expiring;
+
+  return {
+    ...stored,
+    remainingMs,
+    missing,
+    expired,
+    expiring,
+    usable,
+  };
 }

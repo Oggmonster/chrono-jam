@@ -9,18 +9,6 @@ import {
   parsePlaylistSelectionId,
 } from "~/lib/playlist-selection";
 import { cleanTrackTitle, hasRemasterMarker } from "~/lib/track-metadata";
-import {
-  getSpotifyClientId,
-  getSpotifyClientSecret,
-  parseCookieValue,
-  spotifyRefreshCookieName,
-} from "~/lib/spotify-oauth.server";
-
-type SpotifyTokenResponse = {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-};
 
 type SpotifyPlaylistMetaResponse = {
   id: string;
@@ -249,45 +237,6 @@ function normalizePlaylistPackId(rawValue: string) {
   return normalized;
 }
 
-async function fetchSpotifyToken(grantType: "client_credentials" | "refresh_token", refreshToken?: string) {
-  const clientId = getSpotifyClientId();
-  const clientSecret = getSpotifyClientSecret();
-  const basicToken = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-
-  const body = new URLSearchParams();
-  body.set("grant_type", grantType);
-  if (grantType === "refresh_token") {
-    if (!refreshToken) {
-      throw new Error("Missing refresh token.");
-    }
-    body.set("refresh_token", refreshToken);
-  }
-
-  const response = await fetch("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${basicToken}`,
-    },
-    body: body.toString(),
-  });
-
-  const tokenPayload = (await response.json()) as SpotifyTokenResponse & {
-    error?: string;
-    error_description?: string;
-  };
-  if (!response.ok) {
-    const details = tokenPayload.error_description ?? tokenPayload.error ?? "";
-    throw new Error(`Spotify token request failed (${response.status})${details ? `: ${details}` : ""}.`);
-  }
-
-  if (!tokenPayload.access_token) {
-    throw new Error("Spotify token response missing access token.");
-  }
-
-  return tokenPayload.access_token;
-}
-
 async function parseSpotifyApiError(response: Response) {
   try {
     const payload = (await response.json()) as {
@@ -348,7 +297,7 @@ async function spotifyGetWithCandidates(url: string, candidates: TokenCandidate[
   if (!sawUserToken) {
     throw new Error(
       `Spotify playlist access denied (${lastStatus || 403})${lastMessage ? `: ${lastMessage}` : ""}. ` +
-        "If the playlist is private/collaborative, connect Spotify in host setup first. " +
+        "If the playlist is private/collaborative, connect Spotify in host lobby first. " +
         `Attempts: ${attemptSummaries.join(", ")}.`,
     );
   }
@@ -496,28 +445,6 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
   return { tracks, artists, roundSeeds };
 }
 
-async function userTokenCandidateFromRequest(request: Request): Promise<TokenCandidate | null> {
-  const encodedRefreshToken = parseCookieValue(request.headers.get("Cookie"), spotifyRefreshCookieName);
-  if (!encodedRefreshToken) {
-    return null;
-  }
-
-  const refreshToken = decodeURIComponent(encodedRefreshToken);
-  if (!refreshToken) {
-    return null;
-  }
-
-  try {
-    const token = await fetchSpotifyToken("refresh_token", refreshToken);
-    return {
-      token,
-      source: "user",
-    };
-  } catch {
-    return null;
-  }
-}
-
 async function nextPlaylistPackVersion(playlistPackId: string, playlistsDir: string) {
   await mkdir(playlistsDir, { recursive: true });
 
@@ -574,7 +501,7 @@ type PlaylistPackStorageTarget = {
   indexPath: string;
 };
 
-function collectTokenCandidates(userCandidate: TokenCandidate | null, accessTokenOverride?: string) {
+function collectTokenCandidates(accessTokenOverride?: string) {
   const browserToken = accessTokenOverride?.trim() ?? "";
   const tokenCandidates: TokenCandidate[] = [];
 
@@ -585,17 +512,12 @@ function collectTokenCandidates(userCandidate: TokenCandidate | null, accessToke
     });
   }
 
-  if (userCandidate) {
-    tokenCandidates.push(userCandidate);
-  }
-
   return tokenCandidates;
 }
 
 async function buildPlaylistPackFromSpotify(
   rawPlaylistPackId: string,
   rawPlaylist: string,
-  request: Request,
   accessTokenOverride?: string,
 ): Promise<PlaylistPackBuildResult> {
   const playlistPackId = normalizePlaylistPackId(rawPlaylistPackId);
@@ -608,11 +530,10 @@ async function buildPlaylistPackFromSpotify(
     throw new Error("Invalid Spotify playlist ID/URL.");
   }
 
-  const userCandidate = await userTokenCandidateFromRequest(request);
-  const tokenCandidates = collectTokenCandidates(userCandidate, accessTokenOverride);
+  const tokenCandidates = collectTokenCandidates(accessTokenOverride);
 
   if (tokenCandidates.length === 0) {
-    throw new Error("Missing Spotify user token. Connect Spotify in host setup and retry.");
+    throw new Error("Missing Spotify access token. Connect Spotify in host lobby and retry.");
   }
 
   const [profile, meta] = await Promise.all([
@@ -730,9 +651,8 @@ function getUserPlaylistStoragePaths(spotifyUserId: string): PlaylistPackStorage
   };
 }
 
-async function resolveSpotifyUserIdFromRequest(request: Request, accessTokenOverride?: string) {
-  const userCandidate = await userTokenCandidateFromRequest(request);
-  const tokenCandidates = collectTokenCandidates(userCandidate, accessTokenOverride);
+async function resolveSpotifyUserIdFromRequest(accessTokenOverride?: string) {
+  const tokenCandidates = collectTokenCandidates(accessTokenOverride);
   if (tokenCandidates.length === 0) {
     return null;
   }
@@ -754,7 +674,6 @@ export async function generatePlaylistPackFromPlaylist(
   const buildResult = await buildPlaylistPackFromSpotify(
     rawPlaylistPackId,
     rawPlaylist,
-    request,
     accessTokenOverride,
   );
 
@@ -773,7 +692,6 @@ export async function generateUserPlaylistPackFromPlaylist(
   const buildResult = await buildPlaylistPackFromSpotify(
     rawPlaylistPackId,
     rawPlaylist,
-    request,
     accessTokenOverride,
   );
   const hostSpotifyUserId = normalizeSpotifyUserIdForStorage(buildResult.spotifyUserId);
@@ -821,7 +739,7 @@ export async function loadHostPlaylistCatalog(
       removable: false,
     }));
 
-  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(request, accessTokenOverride);
+  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(accessTokenOverride);
   if (!hostSpotifyUserId) {
     return {
       hostSpotifyUserId: null,
@@ -870,9 +788,9 @@ export async function removeUserPlaylistBySelectionId(
     throw new Error("Invalid user playlist selection.");
   }
 
-  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(request, accessTokenOverride);
+  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(accessTokenOverride);
   if (!hostSpotifyUserId) {
-    throw new Error("Missing Spotify user token. Connect Spotify in host setup and retry.");
+    throw new Error("Missing Spotify access token. Connect Spotify in host lobby and retry.");
   }
   if (selection.ownerSpotifyUserId !== hostSpotifyUserId) {
     throw new Error("You can only remove playlists from your own Spotify user folder.");

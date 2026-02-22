@@ -2,16 +2,15 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/auth-spotify-callback";
 
 import {
-  buildRefreshCookie,
   clearStateCookie,
   getSpotifyClientId,
   getSpotifyClientSecret,
   getSpotifyRedirectUri,
-  getSpotifySession,
   parseCookieValue,
+  spotifyHostRoomCookieName,
   spotifyStateCookieName,
 } from "~/lib/spotify-oauth.server";
-import { storeCachedSpotifyAccessToken } from "~/lib/spotify-access-token-cache.server";
+import { normalizeRoomCode } from "~/lib/room-code";
 
 type TokenResponse = {
   access_token: string;
@@ -21,8 +20,27 @@ type TokenResponse = {
   refresh_token?: string;
 };
 
+function decodeCookieValue(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return "";
+  }
+}
+
 function redirectWithError(request: Request, message: string) {
-  const url = new URL("/host/setup", request.url);
+  const callbackUrl = new URL(request.url);
+  const roomFromQuery = normalizeRoomCode(callbackUrl.searchParams.get("room") ?? "");
+  const roomFromCookie = normalizeRoomCode(
+    decodeCookieValue(parseCookieValue(request.headers.get("Cookie"), spotifyHostRoomCookieName)),
+  );
+  const room = roomFromQuery || roomFromCookie;
+  const targetPath = room ? `/host/lobby/${room}` : "/host/lobby";
+  const url = new URL(targetPath, request.url);
   url.searchParams.set("spotify_error", message);
   return redirect(url.toString());
 }
@@ -49,7 +67,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   let clientId: string;
   let clientSecret: string;
   let redirectUri: string;
-  const { sessionId, setCookie: sessionCookie } = getSpotifySession(request);
 
   try {
     clientId = getSpotifyClientId();
@@ -81,20 +98,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const tokenData = (await response.json()) as TokenResponse;
-  storeCachedSpotifyAccessToken(sessionId, {
-    accessToken: tokenData.access_token,
-    expiresIn: tokenData.expires_in,
-    scope: tokenData.scope ?? "",
-    tokenType: tokenData.token_type ?? "Bearer",
-  });
-
-  const target = new URL("/host/setup", request.url);
+  const roomFromQuery = normalizeRoomCode(room ?? "");
+  const roomFromCookie = normalizeRoomCode(
+    decodeCookieValue(parseCookieValue(request.headers.get("Cookie"), spotifyHostRoomCookieName)),
+  );
+  const normalizedRoom = roomFromQuery || roomFromCookie;
+  const target = new URL(
+    normalizedRoom ? `/host/lobby/${normalizedRoom}` : "/host/lobby",
+    request.url,
+  );
   target.searchParams.set("spotify_access_token", tokenData.access_token);
   target.searchParams.set("spotify_expires_in", String(tokenData.expires_in));
   target.searchParams.set("spotify_scope", tokenData.scope);
-  if (room) {
-    target.searchParams.set("room", room);
-  }
   if (playlists) {
     target.searchParams.set("playlists", playlists);
   }
@@ -104,12 +119,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie(spotifyStateCookieName, request));
-  if (sessionCookie) {
-    headers.append("Set-Cookie", sessionCookie);
-  }
-  if (tokenData.refresh_token) {
-    headers.append("Set-Cookie", buildRefreshCookie(tokenData.refresh_token, request));
-  }
+  headers.append("Set-Cookie", clearStateCookie(spotifyHostRoomCookieName, request));
 
   return redirect(target.toString(), {
     headers,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-lobby";
-import { Link, useFetcher, useNavigate } from "react-router";
-import { Check, CheckCheck, ChevronDown, ChevronUp, Copy, Music2, Play, Shield, Users, Wifi } from "lucide-react";
+import { Link, useFetcher, useNavigate, useSearchParams } from "react-router";
+import { Check, CheckCheck, ChevronDown, ChevronUp, Copy, Link2, Music2, Play, Shield, Users, Wifi } from "lucide-react";
 
 import { CatMascot, GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -20,9 +20,9 @@ import {
 } from "~/lib/game-settings";
 import { useRoomState } from "~/lib/game-engine";
 import {
-  readStoredSpotifyToken,
-  resolveSpotifyAccessToken,
-  spotifyTokenKey,
+  clearStoredSpotifyToken,
+  getStoredSpotifyTokenStatus,
+  storeSpotifyToken,
 } from "~/lib/spotify-token";
 import { buildUserPlaylistSelectionId } from "~/lib/playlist-selection";
 
@@ -41,6 +41,13 @@ type PlaylistCatalogEntry = {
 };
 
 type HostLobbyActionResult =
+  | {
+      ok: true;
+      mode: "load-catalog";
+      message: string;
+      hostSpotifyUserId: string | null;
+      playlistCatalog: PlaylistCatalogEntry[];
+    }
   | {
       ok: true;
       mode: "add-user-playlist";
@@ -67,20 +74,26 @@ function jsonResponse(payload: HostLobbyActionResult, status = 200) {
   });
 }
 
+function serializeCatalogEntries(
+  entries: Awaited<ReturnType<typeof loadHostPlaylistCatalog>>["playlists"],
+): PlaylistCatalogEntry[] {
+  return entries.map((entry) => ({
+    id: entry.selectionId,
+    playlistId: entry.playlistId,
+    name: entry.name,
+    version: entry.version,
+    roundCount: entry.roundCount,
+    scope: entry.scope,
+    removable: entry.removable,
+  }));
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const catalog = await loadHostPlaylistCatalog(request);
 
   return {
     hostSpotifyUserId: catalog.hostSpotifyUserId,
-    playlistCatalog: catalog.playlists.map((entry) => ({
-      id: entry.selectionId,
-      playlistId: entry.playlistId,
-      name: entry.name,
-      version: entry.version,
-      roundCount: entry.roundCount,
-      scope: entry.scope,
-      removable: entry.removable,
-    })),
+    playlistCatalog: serializeCatalogEntries(catalog.playlists),
   };
 }
 
@@ -88,6 +101,37 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "").trim();
   const browserSpotifyToken = String(formData.get("spotifyAccessToken") ?? "").trim();
+
+  if (intent === "load_catalog") {
+    if (!browserSpotifyToken) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: "Spotify access token is required.",
+        },
+        400,
+      );
+    }
+
+    try {
+      const catalog = await loadHostPlaylistCatalog(request, browserSpotifyToken);
+      return jsonResponse({
+        ok: true,
+        mode: "load-catalog",
+        message: "Catalog loaded.",
+        hostSpotifyUserId: catalog.hostSpotifyUserId,
+        playlistCatalog: serializeCatalogEntries(catalog.playlists),
+      });
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: error instanceof Error ? error.message : "Catalog load failed.",
+        },
+        400,
+      );
+    }
+  }
 
   if (intent === "add_user_playlist") {
     const playlistPackId = String(formData.get("playlistPackId") ?? "").trim();
@@ -187,16 +231,22 @@ export async function action({ request }: Route.ActionArgs) {
 export default function HostLobby({ params, loaderData }: Route.ComponentProps) {
   const roomId = params.roomId;
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const playlistMutation = useFetcher<HostLobbyActionResult>();
+  const catalogMutation = useFetcher<HostLobbyActionResult>();
   const room = useRoomState(roomId, "host");
   const finishedResetAppliedRef = useRef(false);
   const handledRemovalRef = useRef("");
+  const lastCatalogTokenRef = useRef("");
 
   const [spotifyTokenPresent, setSpotifyTokenPresent] = useState(false);
   const [spotifyTokenStatus, setSpotifyTokenStatus] = useState("");
   const [browserSpotifyToken, setBrowserSpotifyToken] = useState("");
+  const [tokenExpiresAt, setTokenExpiresAt] = useState(0);
+  const [tokenCheckedAt, setTokenCheckedAt] = useState(Date.now());
   const [copied, setCopied] = useState(false);
 
+  const [hostSpotifyUserId, setHostSpotifyUserId] = useState<string | null>(loaderData.hostSpotifyUserId);
   const [playlistCatalog, setPlaylistCatalog] = useState<PlaylistCatalogEntry[]>(loaderData.playlistCatalog);
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
   const [requestedSongCount, setRequestedSongCount] = useState(defaultGameSongCount);
@@ -204,6 +254,10 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
   const [playlistToolsOpen, setPlaylistToolsOpen] = useState(false);
   const mutationPending = playlistMutation.state !== "idle";
   const mutationResult = playlistMutation.data ?? null;
+  const tokenMissing = !browserSpotifyToken;
+  const tokenExpired = !tokenMissing && tokenExpiresAt > 0 && tokenExpiresAt <= tokenCheckedAt;
+  const tokenValid = spotifyTokenPresent && !tokenMissing && !tokenExpired;
+  const tokenRemainingMinutes = tokenValid ? Math.max(1, Math.ceil((tokenExpiresAt - tokenCheckedAt) / 60_000)) : 0;
 
   const readinessRows = useMemo(
     () =>
@@ -220,6 +274,38 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
   );
   const readyCount = readinessRows.filter((entry) => entry.ready).length;
   const allReady = readinessRows.length > 0 && readyCount === readinessRows.length;
+
+  const syncTokenState = (preserveStatus = true) => {
+    const status = getStoredSpotifyTokenStatus(0);
+    const now = Date.now();
+    setTokenCheckedAt(now);
+
+    if (status.expired && status.accessToken) {
+      clearStoredSpotifyToken();
+      setSpotifyTokenPresent(false);
+      setBrowserSpotifyToken("");
+      setTokenExpiresAt(0);
+      setSpotifyTokenStatus("Spotify token expired. Reconnect Spotify.");
+      return;
+    }
+
+    setSpotifyTokenPresent(!status.missing && !status.expired);
+    setBrowserSpotifyToken(status.missing ? "" : status.accessToken);
+    setTokenExpiresAt(status.missing ? 0 : status.expiresAt);
+
+    if (!preserveStatus) {
+      if (status.missing) {
+        setSpotifyTokenStatus("Spotify token missing. Connect Spotify.");
+      } else {
+        setSpotifyTokenStatus("Spotify token ready.");
+      }
+      return;
+    }
+
+    if (status.missing) {
+      setSpotifyTokenStatus((current) => current || "Spotify token missing. Connect Spotify.");
+    }
+  };
 
   useEffect(() => {
     if (room.state.lifecycle !== "running") {
@@ -254,14 +340,100 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
 
   useEffect(() => {
     setPlaylistCatalog(loaderData.playlistCatalog);
-  }, [loaderData.playlistCatalog]);
+    setHostSpotifyUserId(loaderData.hostSpotifyUserId);
+  }, [loaderData.hostSpotifyUserId, loaderData.playlistCatalog]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
+    syncTokenState();
+    const timer = window.setInterval(() => {
+      syncTokenState();
+    }, 15_000);
+
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key !== "chronojam:spotify-access-token" &&
+        event.key !== "chronojam:spotify-access-token-expiry"
+      ) {
+        return;
+      }
+      syncTokenState();
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    const oauthToken = searchParams.get("spotify_access_token");
+    const oauthExpiry = searchParams.get("spotify_expires_in");
+    const oauthError = searchParams.get("spotify_error");
+
+    if (oauthError) {
+      setSpotifyTokenStatus(`Spotify auth error: ${oauthError}`);
+    }
+
+    if (oauthToken) {
+      const parsedExpiry = Number(oauthExpiry);
+      storeSpotifyToken(oauthToken, Number.isFinite(parsedExpiry) && parsedExpiry > 0 ? parsedExpiry : 60 * 60);
+      setSpotifyTokenStatus("Spotify connected. Access token saved.");
+      lastCatalogTokenRef.current = "";
+      syncTokenState(false);
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    let changed = false;
+    for (const key of ["spotify_access_token", "spotify_expires_in", "spotify_scope", "spotify_error"]) {
+      if (nextParams.has(key)) {
+        nextParams.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!tokenValid || !browserSpotifyToken) {
+      lastCatalogTokenRef.current = "";
       return;
     }
-    setBrowserSpotifyToken(window.localStorage.getItem(spotifyTokenKey) ?? "");
-  }, []);
+
+    if (lastCatalogTokenRef.current === browserSpotifyToken || catalogMutation.state !== "idle") {
+      return;
+    }
+
+    lastCatalogTokenRef.current = browserSpotifyToken;
+    catalogMutation.submit(
+      {
+        intent: "load_catalog",
+        spotifyAccessToken: browserSpotifyToken,
+      },
+      { method: "post" },
+    );
+  }, [browserSpotifyToken, catalogMutation, tokenValid]);
+
+  useEffect(() => {
+    const catalogResult = catalogMutation.data;
+    if (!catalogResult) {
+      return;
+    }
+
+    if (!catalogResult.ok) {
+      setSpotifyTokenStatus(catalogResult.message);
+      return;
+    }
+
+    if (catalogResult.mode !== "load-catalog") {
+      return;
+    }
+
+    setHostSpotifyUserId(catalogResult.hostSpotifyUserId);
+    setPlaylistCatalog(catalogResult.playlistCatalog);
+  }, [catalogMutation.data]);
 
   useEffect(() => {
     if (settingsDirty) {
@@ -338,10 +510,15 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
   const setupChanged =
     normalizedSelectedPlaylistIds.join(",") !== room.state.playlistIds.join(",") ||
     selectedGameSongCount !== room.state.gameSongCount;
-  const canApplySetup = room.state.lifecycle !== "running" && (room.state.lifecycle !== "lobby" || setupChanged);
+  const canApplySetup =
+    tokenValid && room.state.lifecycle !== "running" && (room.state.lifecycle !== "lobby" || setupChanged);
   const canStartNormally =
-    room.state.lifecycle === "lobby" && !setupChanged && (room.state.participants.length === 0 || allReady);
+    tokenValid &&
+    room.state.lifecycle === "lobby" &&
+    !setupChanged &&
+    (room.state.participants.length === 0 || allReady);
   const canForceStart =
+    tokenValid &&
     room.state.lifecycle === "lobby" &&
     !setupChanged &&
     room.state.participants.length > 0 &&
@@ -356,6 +533,10 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
     .join(" + ");
 
   const applySetup = () => {
+    if (!tokenValid) {
+      return;
+    }
+
     setSettingsDirty(false);
     room.controls.applyLobbySetup({
       playlistIds: normalizedSelectedPlaylistIds,
@@ -363,42 +544,27 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
     });
   };
 
-  const checkTokenStatus = async () => {
-    const stored = readStoredSpotifyToken();
-    setSpotifyTokenPresent(Boolean(stored.accessToken));
-    if (stored.accessToken) {
-      setBrowserSpotifyToken(stored.accessToken);
-    }
-
-    try {
-      const resolved = await resolveSpotifyAccessToken();
-      setSpotifyTokenPresent(true);
-      setBrowserSpotifyToken(resolved.accessToken);
-      if (resolved.source === "refresh") {
-        setSpotifyTokenStatus("Spotify token refreshed.");
-      } else if (!stored.accessToken) {
-        setSpotifyTokenStatus("Spotify token ready.");
-      }
-    } catch {
-      const fallback = readStoredSpotifyToken();
-      setSpotifyTokenPresent(Boolean(fallback.accessToken));
-      setBrowserSpotifyToken(fallback.accessToken);
-      if (!fallback.accessToken) {
-        setSpotifyTokenStatus("Spotify token missing. Reconnect Spotify.");
-      }
-    }
-  };
-
   useEffect(() => {
-    void checkTokenStatus();
-    const timer = window.setInterval(() => {
-      void checkTokenStatus();
-    }, 15_000);
+    if (!mutationResult || !mutationResult.ok) {
+      return;
+    }
 
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, []);
+    if (mutationResult.mode !== "add-user-playlist" && mutationResult.mode !== "remove-user-playlist") {
+      return;
+    }
+
+    if (!browserSpotifyToken || catalogMutation.state !== "idle") {
+      return;
+    }
+
+    catalogMutation.submit(
+      {
+        intent: "load_catalog",
+        spotifyAccessToken: browserSpotifyToken,
+      },
+      { method: "post" },
+    );
+  }, [browserSpotifyToken, catalogMutation, mutationResult]);
 
   useEffect(() => {
     if (!mutationResult || !mutationResult.ok || mutationResult.mode !== "remove-user-playlist") {
@@ -434,6 +600,10 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
     }
   };
 
+  const connectParams = new URLSearchParams();
+  connectParams.set("room", roomId);
+  const connectHref = `/auth/spotify/start?${connectParams.toString()}`;
+
   return (
     <GameLayout className="mx-auto max-w-3xl">
       <div className="animate-slide-up flex flex-col items-center gap-6">
@@ -464,6 +634,32 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
         <GameCard className="w-full p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-[hsl(var(--accent))]" />
+              <h3 className="font-bold text-card-foreground">Spotify Connection</h3>
+            </div>
+            <Badge variant={tokenValid ? "success" : "warning"}>{tokenValid ? "Connected" : "Reconnect required"}</Badge>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/20 p-4">
+            <Button asChild className="bg-[hsl(155_65%_40%)] text-white hover:bg-[hsl(155_65%_40%/0.9)]">
+              <a href={connectHref}>
+                <Link2 className="h-4 w-4" />
+                {tokenValid ? "Reconnect Spotify" : "Connect Spotify"}
+              </a>
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {tokenValid
+                ? `Token active (${tokenRemainingMinutes}m remaining).`
+                : tokenExpired
+                  ? "Token expired. Reconnect to continue."
+                  : "Connect Spotify to enable setup, imports, and game start."}
+            </p>
+          </div>
+          {spotifyTokenStatus ? <p className="mt-3 text-xs text-muted-foreground">{spotifyTokenStatus}</p> : null}
+        </GameCard>
+
+        <GameCard className="w-full p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
               <Music2 className="h-4 w-4 text-[hsl(var(--accent))]" />
               <h3 className="font-bold text-card-foreground">Game Setup</h3>
             </div>
@@ -475,6 +671,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
               type="button"
               onClick={() => setPlaylistToolsOpen((current) => !current)}
               className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              disabled={!tokenValid}
             >
               <div>
                 <p className="text-sm font-semibold text-card-foreground">Import Spotify Playlists</p>
@@ -505,6 +702,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                         autoCorrect="off"
                         autoCapitalize="none"
                         spellCheck={false}
+                        disabled={!tokenValid || mutationPending}
                       />
                     </label>
                     <label className="grid gap-1 text-xs font-semibold text-card-foreground">
@@ -516,23 +714,24 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                         autoCorrect="off"
                         autoCapitalize="none"
                         spellCheck={false}
+                        disabled={!tokenValid || mutationPending}
                       />
                     </label>
                     <Button
                       type="submit"
                       variant="outline"
-                      disabled={!loaderData.hostSpotifyUserId || mutationPending}
+                      disabled={!tokenValid || !hostSpotifyUserId || mutationPending}
                     >
                       Import to My Playlists
                     </Button>
                   </playlistMutation.Form>
-                  {!loaderData.hostSpotifyUserId ? (
+                  {!hostSpotifyUserId ? (
                     <p className="text-xs text-muted-foreground">
-                      Connect Spotify in host setup first to import playlists tied to your Spotify user ID.
+                      Connect Spotify first to load playlists tied to your Spotify user ID.
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Connected Spotify user: <code>{loaderData.hostSpotifyUserId}</code>
+                      Connected Spotify user: <code>{hostSpotifyUserId}</code>
                     </p>
                   )}
                 </div>
@@ -558,7 +757,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                             <input type="hidden" name="intent" value="remove_user_playlist" />
                             <input type="hidden" name="playlistSelectionId" value={entry.id} />
                             <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
-                            <Button type="submit" variant="outline" size="sm" disabled={mutationPending}>
+                            <Button type="submit" variant="outline" size="sm" disabled={!tokenValid || mutationPending}>
                               Remove
                             </Button>
                           </playlistMutation.Form>
@@ -586,6 +785,10 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                     key={entry.id}
                     type="button"
                     onClick={() => {
+                      if (!tokenValid) {
+                        return;
+                      }
+
                       setSettingsDirty(true);
                       setSelectedPlaylistIds((current) => {
                         if (selected) {
@@ -598,11 +801,12 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                         return [...new Set([...current, entry.id])];
                       });
                     }}
+                    disabled={!tokenValid}
                     className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
                       selected
                         ? "border-[hsl(var(--primary)/0.35)] bg-[hsl(var(--primary)/0.08)]"
                         : "border-border bg-muted/30"
-                    }`}
+                    } ${!tokenValid ? "cursor-not-allowed opacity-60" : ""}`}
                   >
                     <div
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
@@ -634,10 +838,13 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                   type="button"
                   variant={requestedSongCount === preset ? "default" : "outline"}
                   onClick={() => {
+                    if (!tokenValid) {
+                      return;
+                    }
                     setSettingsDirty(true);
                     setRequestedSongCount(preset);
                   }}
-                  disabled={preset > selectedRoundCapacity}
+                  disabled={!tokenValid || preset > selectedRoundCapacity}
                 >
                   {preset}
                 </Button>
@@ -652,6 +859,9 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                 step={1}
                 value={requestedSongCount}
                 onChange={(event) => {
+                  if (!tokenValid) {
+                    return;
+                  }
                   const parsed = parseGameSongCount(event.target.value);
                   if (parsed === null) {
                     return;
@@ -660,6 +870,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                   setRequestedSongCount(clampGameSongCount(parsed, selectedRoundCapacity, defaultGameSongCount));
                 }}
                 className="h-9 w-20 text-center"
+                disabled={!tokenValid}
               />
               <span>{`(max ${selectedRoundCapacity})`}</span>
             </div>
@@ -738,8 +949,8 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
             <div className="flex flex-col gap-3">
               <StatusItem
                 label="Spotify Token"
-                detail={spotifyTokenPresent ? "Host token active" : "Reconnect required"}
-                status={spotifyTokenPresent ? "ready" : "waiting"}
+                detail={tokenValid ? `Host token active (${tokenRemainingMinutes}m left)` : "Reconnect required"}
+                status={tokenValid ? "ready" : "waiting"}
               />
               <StatusItem
                 label="Game Setup"
@@ -751,12 +962,15 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                 detail={allReady ? "All synced" : "Waiting for players"}
                 status={allReady ? "ready" : "waiting"}
               />
-              {spotifyTokenStatus ? <p className="text-xs text-muted-foreground">{spotifyTokenStatus}</p> : null}
             </div>
           </GameCard>
         </div>
 
-        {room.state.lifecycle !== "lobby" ? (
+        {!tokenValid ? (
+          <p className="text-center text-xs font-semibold text-[#8d2e2a]">
+            Spotify token is required. Connect/reconnect before syncing setup or starting.
+          </p>
+        ) : room.state.lifecycle !== "lobby" ? (
           <p className="text-center text-xs font-semibold text-[#8d2e2a]">
             Sync setup to reset the room for the next game.
           </p>
@@ -772,7 +986,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
 
         <div className="flex flex-wrap justify-center gap-3">
           <Button asChild variant="outline">
-            <Link to="/host/setup">Back To Setup</Link>
+            <Link to="/host/lobby">New Room</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to="/">Home</Link>

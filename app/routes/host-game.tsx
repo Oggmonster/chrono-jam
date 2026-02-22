@@ -10,9 +10,8 @@ import { Input } from "~/components/ui/input";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import { useSpotifyHostPlayer } from "~/lib/spotify-host";
 import {
-  readStoredSpotifyToken,
-  resolveSpotifyAccessToken,
-  refreshSpotifyAccessToken,
+  clearStoredSpotifyToken,
+  getStoredSpotifyTokenStatus,
   storeSpotifyToken,
 } from "~/lib/spotify-token";
 
@@ -26,7 +25,6 @@ export default function HostGame({ params }: Route.ComponentProps) {
 
   const [token, setToken] = useState("");
   const [tokenStatus, setTokenStatus] = useState("");
-  const [refreshingToken, setRefreshingToken] = useState(false);
   const [interactionUnlocked, setInteractionUnlocked] = useState(false);
   const spotify = useSpotifyHostPlayer(token);
   const {
@@ -52,47 +50,23 @@ export default function HostGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    const stored = readStoredSpotifyToken();
-    if (stored.accessToken) {
-      setToken(stored.accessToken);
-      setTokenStatus("Using stored token.");
-    }
-
-    let cancelled = false;
-    void resolveSpotifyAccessToken()
-      .then(({ accessToken, source }) => {
-        if (cancelled) {
-          return;
-        }
-
-        setToken(accessToken);
-        setTokenStatus(source === "refresh" ? "Token refreshed." : "Token synced from setup.");
-      })
-      .catch(() => {
-        if (!stored.accessToken) {
-          setTokenStatus("Missing token. Reconnect Spotify or paste a valid access token.");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     const syncToken = () => {
-      void resolveSpotifyAccessToken()
-        .then(({ accessToken, source }) => {
-          setToken((current) => (current === accessToken ? current : accessToken));
-          if (source === "refresh") {
-            setTokenStatus("Token auto-refreshed.");
-          }
-        })
-        .catch(() => {
-          // Ignore periodic sync failures and keep current token.
-        });
+      const status = getStoredSpotifyTokenStatus(0);
+      if (status.expired && status.accessToken) {
+        clearStoredSpotifyToken();
+      }
+
+      if (status.missing || status.expired) {
+        setToken((current) => (current ? "" : current));
+        setTokenStatus("Missing or expired token. Reconnect Spotify or paste a valid access token.");
+        return;
+      }
+
+      setToken((current) => (current === status.accessToken ? current : status.accessToken));
+      setTokenStatus("Using token from local storage.");
     };
 
+    syncToken();
     const timer = window.setInterval(syncToken, 20_000);
     return () => {
       window.clearInterval(timer);
@@ -227,22 +201,6 @@ export default function HostGame({ params }: Route.ComponentProps) {
 
     storeSpotifyToken(token.trim(), 60 * 60);
     setTokenStatus("Token saved manually.");
-  };
-
-  const refreshToken = () => {
-    setRefreshingToken(true);
-    void refreshSpotifyAccessToken()
-      .then(({ accessToken, expiresIn }) => {
-        storeSpotifyToken(accessToken, expiresIn);
-        setToken(accessToken);
-        setTokenStatus("Token refreshed.");
-      })
-      .catch(() => {
-        setTokenStatus("Token refresh failed. Reconnect Spotify.");
-      })
-      .finally(() => {
-        setRefreshingToken(false);
-      });
   };
 
   const remainingSeconds = Math.ceil(room.remainingMs / 1000);
@@ -431,9 +389,6 @@ export default function HostGame({ params }: Route.ComponentProps) {
                   </label>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={saveToken}>Save Token</Button>
-                    <Button variant="outline" size="sm" onClick={refreshToken}>
-                      {refreshingToken ? "Refreshing..." : "Refresh Token"}
-                    </Button>
                     <Button variant="outline" size="sm" onClick={() => void refreshSpotifyDevices()}>
                       Refresh Devices
                     </Button>
