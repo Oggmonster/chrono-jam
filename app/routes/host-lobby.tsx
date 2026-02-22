@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-lobby";
 import { Link, useFetcher, useNavigate } from "react-router";
-import { Check, CheckCheck, Copy, Music2, Play, Shield, Users, Wifi } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, ChevronUp, Copy, Music2, Play, Shield, Users, Wifi } from "lucide-react";
 
 import { CatMascot, GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -201,6 +201,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
   const [requestedSongCount, setRequestedSongCount] = useState(defaultGameSongCount);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [playlistToolsOpen, setPlaylistToolsOpen] = useState(false);
   const mutationPending = playlistMutation.state !== "idle";
   const mutationResult = playlistMutation.data ?? null;
 
@@ -469,177 +470,202 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
             <Badge variant={setupChanged ? "warning" : "success"}>{setupChanged ? "Changes not synced" : "Synced"}</Badge>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold text-card-foreground">Playlist Packs</p>
-              <div className="flex flex-col gap-2">
-                {playlistEntries.map((entry) => {
-                  const selected = normalizedSelectedPlaylistIds.includes(entry.id);
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      onClick={() => {
-                        setSettingsDirty(true);
-                        setSelectedPlaylistIds((current) => {
-                          if (selected) {
-                            if (normalizedSelectedPlaylistIds.length <= 1) {
-                              return current;
-                            }
-                            return current.filter((id) => id !== entry.id);
-                          }
+          <div className="mb-5 rounded-xl border border-border bg-muted/20">
+            <button
+              type="button"
+              onClick={() => setPlaylistToolsOpen((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+            >
+              <div>
+                <p className="text-sm font-semibold text-card-foreground">Import Spotify Playlists</p>
+                <p className="text-xs text-muted-foreground">
+                  {userPlaylistEntries.length} personal playlist{userPlaylistEntries.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              {playlistToolsOpen ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
 
-                          return [...new Set([...current, entry.id])];
-                        });
-                      }}
-                      className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
-                        selected
-                          ? "border-[hsl(var(--primary)/0.35)] bg-[hsl(var(--primary)/0.08)]"
-                          : "border-border bg-muted/30"
-                      }`}
+            {playlistToolsOpen ? (
+              <div className="grid gap-4 border-t border-border px-4 py-4 md:grid-cols-2">
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-card-foreground">Import Spotify Playlist</p>
+                  <playlistMutation.Form method="post" className="grid gap-3">
+                    <input type="hidden" name="intent" value="add_user_playlist" />
+                    <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
+                    <label className="grid gap-1 text-xs font-semibold text-card-foreground">
+                      Pack ID
+                      <Input
+                        name="playlistPackId"
+                        placeholder="e.g. my-party-mix"
+                        required
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-semibold text-card-foreground">
+                      Spotify playlist URL or ID
+                      <Input
+                        name="playlist"
+                        placeholder="https://open.spotify.com/playlist/..."
+                        required
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      disabled={!loaderData.hostSpotifyUserId || mutationPending}
                     >
-                      <div
-                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
-                          selected
-                            ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]"
-                            : "border-muted-foreground/40"
-                        }`}
-                      >
-                        {selected ? <Check className="h-3 w-3 text-[hsl(var(--primary-foreground))]" /> : null}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-card-foreground">{entry.name}</p>
-                        <p className="text-xs text-muted-foreground">{entry.roundCount} songs</p>
-                      </div>
-                      <Badge className="text-[10px]">{`v${entry.version}`}</Badge>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground">Selected capacity: {selectedRoundCapacity} songs</p>
-            </div>
+                      Import to My Playlists
+                    </Button>
+                  </playlistMutation.Form>
+                  {!loaderData.hostSpotifyUserId ? (
+                    <p className="text-xs text-muted-foreground">
+                      Connect Spotify in host setup first to import playlists tied to your Spotify user ID.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Connected Spotify user: <code>{loaderData.hostSpotifyUserId}</code>
+                    </p>
+                  )}
+                </div>
 
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-card-foreground">Songs per Game</p>
-              <div className="flex flex-wrap gap-2">
-                {gameSongCountPresets.map((preset) => (
-                  <Button
-                    key={preset}
-                    type="button"
-                    variant={requestedSongCount === preset ? "default" : "outline"}
-                    onClick={() => {
-                      setSettingsDirty(true);
-                      setRequestedSongCount(preset);
-                    }}
-                    disabled={preset > selectedRoundCapacity}
-                  >
-                    {preset}
-                  </Button>
-                ))}
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-card-foreground">My Imported Playlists</p>
+                  {userPlaylistEntries.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No user playlists imported yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {userPlaylistEntries.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card p-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold text-card-foreground">{entry.name}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {entry.playlistId} ({entry.roundCount} songs)
+                            </p>
+                          </div>
+                          <playlistMutation.Form method="post">
+                            <input type="hidden" name="intent" value="remove_user_playlist" />
+                            <input type="hidden" name="playlistSelectionId" value={entry.id} />
+                            <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
+                            <Button type="submit" variant="outline" size="sm" disabled={mutationPending}>
+                              Remove
+                            </Button>
+                          </playlistMutation.Form>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {mutationResult ? (
+                    <Badge variant={mutationResult.ok ? "success" : "warning"} className="w-fit">
+                      {mutationResult.message}
+                    </Badge>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Custom:</span>
-                <Input
-                  type="number"
-                  min={1}
-                  max={selectedRoundCapacity}
-                  step={1}
-                  value={requestedSongCount}
-                  onChange={(event) => {
-                    const parsed = parseGameSongCount(event.target.value);
-                    if (parsed === null) {
-                      return;
-                    }
-                    setSettingsDirty(true);
-                    setRequestedSongCount(clampGameSongCount(parsed, selectedRoundCapacity, defaultGameSongCount));
-                  }}
-                  className="h-9 w-20 text-center"
-                />
-                <span>{`(max ${selectedRoundCapacity})`}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Using {selectedGameSongCount} songs (max {selectedRoundCapacity})
-              </p>
-            </div>
+            ) : null}
           </div>
 
-          <div className="mt-5 grid gap-4 rounded-xl border border-border bg-muted/20 p-4 md:grid-cols-2">
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-card-foreground">Import Spotify Playlist</p>
-              <playlistMutation.Form method="post" className="grid gap-3">
-                <input type="hidden" name="intent" value="add_user_playlist" />
-                <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
-                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
-                  Pack ID
-                  <Input
-                    name="playlistPackId"
-                    placeholder="e.g. my-party-mix"
-                    required
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                  />
-                </label>
-                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
-                  Spotify playlist URL or ID
-                  <Input
-                    name="playlist"
-                    placeholder="https://open.spotify.com/playlist/..."
-                    required
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                  />
-                </label>
-                <Button
-                  type="submit"
-                  variant="outline"
-                  disabled={!loaderData.hostSpotifyUserId || mutationPending}
-                >
-                  Import to My Playlists
-                </Button>
-              </playlistMutation.Form>
-              {!loaderData.hostSpotifyUserId ? (
-                <p className="text-xs text-muted-foreground">
-                  Connect Spotify in host setup first to import playlists tied to your Spotify user ID.
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Connected Spotify user: <code>{loaderData.hostSpotifyUserId}</code>
-                </p>
-              )}
-            </div>
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-card-foreground">Playlist Packs</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {playlistEntries.map((entry) => {
+                const selected = normalizedSelectedPlaylistIds.includes(entry.id);
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => {
+                      setSettingsDirty(true);
+                      setSelectedPlaylistIds((current) => {
+                        if (selected) {
+                          if (normalizedSelectedPlaylistIds.length <= 1) {
+                            return current;
+                          }
+                          return current.filter((id) => id !== entry.id);
+                        }
 
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-card-foreground">My Imported Playlists</p>
-              {userPlaylistEntries.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No user playlists imported yet.</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {userPlaylistEntries.map((entry) => (
-                    <div key={entry.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card p-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-card-foreground">{entry.name}</p>
-                        <p className="text-[11px] text-muted-foreground">{entry.playlistId} ({entry.roundCount} songs)</p>
-                      </div>
-                      <playlistMutation.Form method="post">
-                        <input type="hidden" name="intent" value="remove_user_playlist" />
-                        <input type="hidden" name="playlistSelectionId" value={entry.id} />
-                        <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
-                        <Button type="submit" variant="outline" size="sm" disabled={mutationPending}>
-                          Remove
-                        </Button>
-                      </playlistMutation.Form>
+                        return [...new Set([...current, entry.id])];
+                      });
+                    }}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
+                      selected
+                        ? "border-[hsl(var(--primary)/0.35)] bg-[hsl(var(--primary)/0.08)]"
+                        : "border-border bg-muted/30"
+                    }`}
+                  >
+                    <div
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                        selected
+                          ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]"
+                          : "border-muted-foreground/40"
+                      }`}
+                    >
+                      {selected ? <Check className="h-3 w-3 text-[hsl(var(--primary-foreground))]" /> : null}
                     </div>
-                  ))}
-                </div>
-              )}
-              {mutationResult ? (
-                <Badge variant={mutationResult.ok ? "success" : "warning"} className="w-fit">
-                  {mutationResult.message}
-                </Badge>
-              ) : null}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-card-foreground">{entry.name}</p>
+                      <p className="text-xs text-muted-foreground">{entry.roundCount} songs</p>
+                    </div>
+                    <Badge className="text-[10px]">{`v${entry.version}`}</Badge>
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-xs text-muted-foreground">Selected capacity: {selectedRoundCapacity} songs</p>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            <p className="text-sm font-semibold text-card-foreground">Songs per Game</p>
+            <div className="flex flex-wrap gap-2">
+              {gameSongCountPresets.map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant={requestedSongCount === preset ? "default" : "outline"}
+                  onClick={() => {
+                    setSettingsDirty(true);
+                    setRequestedSongCount(preset);
+                  }}
+                  disabled={preset > selectedRoundCapacity}
+                >
+                  {preset}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Custom:</span>
+              <Input
+                type="number"
+                min={1}
+                max={selectedRoundCapacity}
+                step={1}
+                value={requestedSongCount}
+                onChange={(event) => {
+                  const parsed = parseGameSongCount(event.target.value);
+                  if (parsed === null) {
+                    return;
+                  }
+                  setSettingsDirty(true);
+                  setRequestedSongCount(clampGameSongCount(parsed, selectedRoundCapacity, defaultGameSongCount));
+                }}
+                className="h-9 w-20 text-center"
+              />
+              <span>{`(max ${selectedRoundCapacity})`}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Using {selectedGameSongCount} songs (max {selectedRoundCapacity})
+            </p>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
