@@ -52,18 +52,6 @@ type SpotifyPlaylistTracksResponse = {
   next: string | null;
 };
 
-type BaseBatteryAsset = {
-  kind: "base-battery";
-  version: number;
-  tracks: CatalogEntry[];
-  artists: CatalogEntry[];
-};
-
-type BaseBatteryVersionAsset = {
-  kind: "base-battery-version";
-  version: number;
-};
-
 type PlaylistPackAsset = {
   kind: "playlist-pack";
   playlistId: string;
@@ -85,15 +73,6 @@ type PlaylistCatalogAsset = {
     artistCount?: number;
     roundCount?: number;
   }>;
-};
-
-export type GenerateBaseBatteryResult = {
-  version: number;
-  fileName: string;
-  playlistId: string;
-  playlistName: string;
-  trackCount: number;
-  artistCount: number;
 };
 
 export type GeneratePlaylistPackResult = {
@@ -418,27 +397,6 @@ async function userTokenCandidateFromRequest(request: Request): Promise<TokenCan
   }
 }
 
-async function nextBaseBatteryVersion() {
-  const gameDataDir = path.join(process.cwd(), "public", "game-data");
-  await mkdir(gameDataDir, { recursive: true });
-
-  const fileNames = await readdir(gameDataDir);
-  let maxVersion = 0;
-  for (const fileName of fileNames) {
-    const match = /^base-battery\.v(\d+)\.json$/u.exec(fileName);
-    if (!match) {
-      continue;
-    }
-
-    const version = Number.parseInt(match[1]!, 10);
-    if (Number.isFinite(version) && version > maxVersion) {
-      maxVersion = version;
-    }
-  }
-
-  return maxVersion + 1;
-}
-
 async function nextPlaylistPackVersion(playlistPackId: string) {
   const playlistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
   await mkdir(playlistsDir, { recursive: true });
@@ -479,97 +437,8 @@ async function readPlaylistCatalogFile() {
 
   return {
     kind: "playlist-catalog",
-    playlists: [
-      {
-        id: "core-pop",
-        name: "Core Pop",
-        version: 1,
-        trackCount: 5,
-        artistCount: 5,
-        roundCount: 5,
-      },
-    ],
+    playlists: [],
   } satisfies PlaylistCatalogAsset;
-}
-
-export async function generateBaseBatteryFromPlaylist(
-  rawPlaylist: string,
-  request: Request,
-  accessTokenOverride?: string,
-): Promise<GenerateBaseBatteryResult> {
-  const playlistId = parseSpotifyPlaylistId(rawPlaylist);
-  if (!playlistId) {
-    throw new Error("Invalid Spotify playlist ID/URL.");
-  }
-
-  const userCandidate = await userTokenCandidateFromRequest(request);
-  const browserToken = accessTokenOverride?.trim() ?? "";
-  const tokenCandidates: TokenCandidate[] = [];
-  if (browserToken) {
-    tokenCandidates.push({
-      token: browserToken,
-      source: "browser",
-    });
-  }
-  if (userCandidate) {
-    tokenCandidates.push(userCandidate);
-  }
-
-  if (tokenCandidates.length === 0) {
-    throw new Error(
-      "Missing Spotify user token. Connect Spotify in host setup and retry.",
-    );
-  }
-
-  const [profile, meta] = await Promise.all([
-    fetchCurrentUserProfile(tokenCandidates),
-    fetchPlaylistMeta(playlistId, tokenCandidates),
-  ]);
-  const ownerId = meta.owner?.id?.trim() ?? "";
-  const userId = profile.id.trim();
-
-  let catalog: { tracks: CatalogEntry[]; artists: CatalogEntry[] };
-  try {
-    catalog = await fetchPlaylistCatalog(playlistId, tokenCandidates);
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("Spotify access denied")) {
-      throw new Error(
-        `Spotify denied playlist items. Since February 2026, playlist items can only be read for playlists you own/collaborate on. ` +
-          `Connected user: ${userId || "unknown"}. Playlist owner: ${ownerId || "unknown"}. ` +
-          `Create/copy this playlist under your account and retry.`,
-      );
-    }
-    throw error;
-  }
-
-  const version = await nextBaseBatteryVersion();
-  const fileName = `base-battery.v${version}.json`;
-  const gameDataDir = path.join(process.cwd(), "public", "game-data");
-  const baseBatteryPath = path.join(gameDataDir, fileName);
-  const latestVersionPath = path.join(gameDataDir, "base-battery.latest.json");
-
-  const payload: BaseBatteryAsset = {
-    kind: "base-battery",
-    version,
-    tracks: catalog.tracks,
-    artists: catalog.artists,
-  };
-  const latestPayload: BaseBatteryVersionAsset = {
-    kind: "base-battery-version",
-    version,
-  };
-
-  await writeFile(baseBatteryPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  await writeFile(latestVersionPath, `${JSON.stringify(latestPayload, null, 2)}\n`, "utf8");
-
-  return {
-    version,
-    fileName,
-    playlistId: meta.id,
-    playlistName: meta.name,
-    trackCount: payload.tracks.length,
-    artistCount: payload.artists.length,
-  };
 }
 
 export async function generatePlaylistPackFromPlaylist(

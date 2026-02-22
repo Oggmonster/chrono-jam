@@ -16,7 +16,6 @@ export type PlaylistRound = {
 
 const playlistDataDir = path.join(process.cwd(), "public", "game-data", "playlists");
 const playlistCatalogPath = path.join(playlistDataDir, "index.json");
-export const defaultPlaylistIds = ["core-pop"] as const;
 
 type PlaylistCatalogAsset = {
   kind: "playlist-catalog";
@@ -42,12 +41,11 @@ type PlaylistPackAsset = {
   }>;
 };
 
-function normalizePlaylistIds(playlistIds: string[]) {
+function trimUniquePlaylistIds(playlistIds: string[]) {
   const sanitized = playlistIds
     .map((playlistId) => playlistId.trim())
     .filter((playlistId) => playlistId.length > 0);
-  const unique = [...new Set(sanitized)];
-  return unique.length > 0 ? unique : [...defaultPlaylistIds];
+  return [...new Set(sanitized)];
 }
 
 function fallbackRounds(): PlaylistRound[] {
@@ -120,6 +118,28 @@ function loadVersionMap() {
   return cachedVersionMap;
 }
 
+export function resolveDefaultPlaylistIds() {
+  const versionMap = loadVersionMap();
+  const firstPlaylistId = versionMap.keys().next().value as string | undefined;
+  return firstPlaylistId ? [firstPlaylistId] : [];
+}
+
+export function normalizePlaylistIdsForCatalog(playlistIds: string[]) {
+  const unique = trimUniquePlaylistIds(playlistIds);
+  const versionMap = loadVersionMap();
+  if (versionMap.size === 0) {
+    return unique;
+  }
+
+  if (unique.length === 0) {
+    return resolveDefaultPlaylistIds();
+  }
+
+  const availableIds = new Set(versionMap.keys());
+  const known = unique.filter((playlistId) => availableIds.has(playlistId));
+  return known.length > 0 ? known : resolveDefaultPlaylistIds();
+}
+
 const packRoundCache = new Map<string, PlaylistRound[]>();
 const playlistRoundCache = new Map<string, PlaylistRound[]>();
 
@@ -187,7 +207,7 @@ function loadPackRounds(playlistId: string, version: number) {
 }
 
 export function loadRoundsForPlaylistIds(playlistIds: string[]) {
-  const normalizedIds = normalizePlaylistIds(playlistIds);
+  const normalizedIds = normalizePlaylistIdsForCatalog(playlistIds);
   const cacheKey = normalizedIds.join(",");
   const cached = playlistRoundCache.get(cacheKey);
   if (cached) {

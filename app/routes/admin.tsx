@@ -8,7 +8,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { buildAdminAuthCookie, getAdminPassword, isAdminAuthenticated, isAdminPasswordConfigured } from "~/lib/admin-auth.server";
-import { generateBaseBatteryFromPlaylist, generatePlaylistPackFromPlaylist } from "~/lib/admin-battery.server";
+import { generatePlaylistPackFromPlaylist } from "~/lib/admin-battery.server";
 import { spotifyTokenKey } from "~/lib/spotify-token";
 
 type AdminActionResult =
@@ -16,17 +16,6 @@ type AdminActionResult =
       ok: true;
       mode: "login";
       message: string;
-    }
-  | {
-      ok: true;
-      mode: "generate-base-battery";
-      message: string;
-      fileName: string;
-      version: number;
-      playlistId: string;
-      playlistName: string;
-      trackCount: number;
-      artistCount: number;
     }
   | {
       ok: true;
@@ -106,53 +95,6 @@ export async function action({ request }: Route.ActionArgs) {
         "Set-Cookie": buildAdminAuthCookie(request, true),
       },
     });
-  }
-
-  if (intent === "generate_base_battery") {
-    if (!isAdminAuthenticated(request)) {
-      return jsonResponse(
-        {
-          ok: false,
-          message: "Sign in first.",
-        },
-        403,
-      );
-    }
-
-    const playlist = String(formData.get("playlist") ?? "").trim();
-    const browserSpotifyToken = String(formData.get("spotifyAccessToken") ?? "").trim();
-    if (!playlist) {
-      return jsonResponse(
-        {
-          ok: false,
-          message: "Playlist URL/ID is required.",
-        },
-        400,
-      );
-    }
-
-    try {
-      const result = await generateBaseBatteryFromPlaylist(
-        playlist,
-        request,
-        browserSpotifyToken || undefined,
-      );
-      return jsonResponse({
-        ok: true,
-        mode: "generate-base-battery",
-        message: "Base battery generated.",
-        ...result,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Generation failed.";
-      return jsonResponse(
-        {
-          ok: false,
-          message,
-        },
-        400,
-      );
-    }
   }
 
   if (intent === "generate_playlist_pack") {
@@ -240,7 +182,7 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
       <div className="animate-slide-up flex flex-col gap-4">
         <div className="flex flex-col items-center gap-2">
           <GameTitle className="text-2xl md:text-3xl">Admin</GameTitle>
-          <GameSubtitle>Playlist and battery generation tools</GameSubtitle>
+          <GameSubtitle>Playlist pack generation tools</GameSubtitle>
         </div>
 
         {!loaderData.adminPasswordConfigured ? (
@@ -265,45 +207,6 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                 </label>
                 <Button type="submit" variant="success">
                   Sign In
-                </Button>
-              </Form>
-            </div>
-          </GameCard>
-        ) : null}
-
-        {loaderData.adminPasswordConfigured && loaderData.authenticated ? (
-          <GameCard className="p-5">
-            <h3 className="text-lg font-bold text-card-foreground">Base Battery Generator</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-                Builds a new <code>base-battery.vN.json</code> from a Spotify playlist and updates the latest-version manifest.
-            </p>
-            <div className="mt-4 space-y-4">
-              <Form method="post" className="grid gap-4">
-                <input type="hidden" name="intent" value="generate_base_battery" />
-                <input type="hidden" name="spotifyAccessToken" value={browserToken} />
-                <label className="grid gap-2 text-sm font-semibold text-card-foreground">
-                  Spotify playlist URL or ID
-                  <Input
-                    name="playlist"
-                    placeholder="https://open.spotify.com/playlist/..."
-                    required
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                  />
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Host browser token: {browserToken ? "available" : "missing"}.
-                </p>
-                <Button type="submit" variant="success">
-                  Generate New Base Battery Version
-                </Button>
-              </Form>
-
-              <Form method="post">
-                <input type="hidden" name="intent" value="logout" />
-                <Button type="submit" variant="outline">
-                  Sign Out
                 </Button>
               </Form>
             </div>
@@ -350,6 +253,12 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
                   Generate New Playlist Pack Version
                 </Button>
               </Form>
+              <Form method="post">
+                <input type="hidden" name="intent" value="logout" />
+                <Button type="submit" variant="outline">
+                  Sign Out
+                </Button>
+              </Form>
             </div>
           </GameCard>
         ) : null}
@@ -360,15 +269,6 @@ export default function Admin({ loaderData, actionData }: Route.ComponentProps) 
             <div className="mt-3 space-y-2">
               <Badge variant={result.ok ? "success" : "warning"}>{result.ok ? "Success" : "Error"}</Badge>
               <p className="text-sm font-semibold text-card-foreground">{result.message}</p>
-              {result.ok && result.mode === "generate-base-battery" ? (
-                <div className="grid gap-1 text-xs text-muted-foreground">
-                  <p>Version: {result.version}</p>
-                  <p>File: {result.fileName}</p>
-                  <p>Playlist: {result.playlistName} ({result.playlistId})</p>
-                  <p>Tracks: {result.trackCount}</p>
-                  <p>Artists: {result.artistCount}</p>
-                </div>
-              ) : null}
               {result.ok && result.mode === "generate-playlist-pack" ? (
                 <div className="grid gap-1 text-xs text-muted-foreground">
                   <p>Version: {result.version}</p>

@@ -21,18 +21,6 @@ export type GamePackRound = {
   startMs: number;
 };
 
-type BaseBatteryAsset = {
-  kind: "base-battery";
-  version: number;
-  tracks: CatalogEntry[];
-  artists: CatalogEntry[];
-};
-
-type BaseBatteryVersionAsset = {
-  kind: "base-battery-version";
-  version: number;
-};
-
 type PlaylistPackAsset = {
   kind: "playlist-pack";
   playlistId: string;
@@ -62,7 +50,6 @@ export type GamePack = {
     createdAt: number;
     roundCount: number;
     playlistIds: string[];
-    batteryVersion: number;
   };
   rounds: GamePackRound[];
 };
@@ -95,7 +82,7 @@ export type GamePackLoadResult = {
   source: "cache" | "fresh" | "mixed" | "memory";
 };
 
-export const defaultPlaylistIds = ["core-pop"] as const;
+export const defaultPlaylistIds: string[] = [];
 
 const dbName = "chronojam-catalog-cache";
 const dbVersion = 1;
@@ -103,7 +90,6 @@ const storeMeta = "meta";
 const storeTracks = "tracks";
 const storeArtists = "artists";
 const storePacks = "packs";
-const defaultBaseBatteryVersion = 1;
 let cachedAutocompletePack: { key: string; pack: CatalogAutocompletePack } | null = null;
 
 function fnv1a(input: string) {
@@ -257,52 +243,6 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
   await transactionDone(tx);
 }
 
-async function resolveBaseBatteryVersion() {
-  try {
-    const asset = await fetchJsonAsset<BaseBatteryVersionAsset>("/game-data/base-battery.latest.json");
-    if (
-      asset.kind === "base-battery-version" &&
-      Number.isFinite(asset.version) &&
-      asset.version >= 1
-    ) {
-      return Math.floor(asset.version);
-    }
-  } catch {
-    // Fall through to default static version.
-  }
-
-  return defaultBaseBatteryVersion;
-}
-
-async function ensureBaseBattery(
-  db: IDBDatabase,
-  version: number,
-): Promise<{ source: DataSource; hash: string; version: number }> {
-  const metaKey = "base-battery";
-  const existing = await readMeta(db, metaKey);
-  if (existing && existing.version === version && existing.hash) {
-    return { source: "cache", hash: existing.hash, version };
-  }
-
-  const asset = await fetchJsonAsset<BaseBatteryAsset>(`/game-data/base-battery.v${version}.json`);
-  if (asset.kind !== "base-battery" || asset.version !== version) {
-    throw new Error("Invalid base battery asset");
-  }
-
-  await mergeCatalogEntries(db, storeTracks, asset.tracks);
-  await mergeCatalogEntries(db, storeArtists, asset.artists);
-
-  const hash = stableHash(asset);
-  await writeMeta(db, {
-    key: metaKey,
-    version: asset.version,
-    hash,
-    updatedAt: Date.now(),
-  });
-
-  return { source: "fresh", hash, version };
-}
-
 async function resolvePlaylistPackVersions(playlistIds: string[]) {
   const defaultVersions = Object.fromEntries(playlistIds.map((playlistId) => [playlistId, 1] as const)) as Record<
     string,
@@ -336,6 +276,28 @@ async function resolvePlaylistPackVersions(playlistIds: string[]) {
     return resolved;
   } catch {
     return defaultVersions;
+  }
+}
+
+async function resolveDefaultPlaylistIdsFromCatalog() {
+  try {
+    const catalog = await fetchJsonAsset<PlaylistCatalogAsset>("/game-data/playlists/index.json");
+    if (catalog.kind !== "playlist-catalog" || !Array.isArray(catalog.playlists)) {
+      return [...defaultPlaylistIds];
+    }
+
+    const firstPlaylistId = catalog.playlists.find(
+      (entry) =>
+        typeof entry?.id === "string" &&
+        entry.id.trim().length > 0 &&
+        typeof entry?.version === "number" &&
+        Number.isFinite(entry.version) &&
+        entry.version >= 1,
+    )?.id;
+
+    return typeof firstPlaylistId === "string" ? [firstPlaylistId.trim()] : [...defaultPlaylistIds];
+  } catch {
+    return [...defaultPlaylistIds];
   }
 }
 
@@ -401,7 +363,6 @@ function fallbackGamePack(roomId: string): GamePack {
       createdAt: Date.now(),
       roundCount: rounds.length,
       playlistIds: [...defaultPlaylistIds],
-      batteryVersion: defaultBaseBatteryVersion,
     },
     rounds,
   };
@@ -411,35 +372,37 @@ export async function loadGamePack(
   roomId: string,
   playlistIds: string[] = [...defaultPlaylistIds],
 ): Promise<GamePackLoadResult> {
+  let db: IDBDatabase | null = null;
   try {
-    const db = await openCatalogDb();
-    const safePlaylistIds = playlistIds.length > 0 ? playlistIds : [...defaultPlaylistIds];
-    const baseBatteryVersion = await resolveBaseBatteryVersion();
-    const battery = await ensureBaseBattery(db, baseBatteryVersion);
+    db = await openCatalogDb();
+    const safePlaylistIds = playlistIds.length > 0 ? playlistIds : await resolveDefaultPlaylistIdsFromCatalog();
+    if (safePlaylistIds.length === 0) {
+      return {
+        pack: fallbackGamePack(roomId),
+        source: "memory",
+      };
+    }
     const playlistVersions = await resolvePlaylistPackVersions(safePlaylistIds);
     const playlistResults = await Promise.all(
       safePlaylistIds.map((playlistId) =>
-        ensurePlaylistPack(db, playlistId, playlistVersions[playlistId] ?? 1),
+        ensurePlaylistPack(db!, playlistId, playlistVersions[playlistId] ?? 1),
       ),
     );
 
     const allRounds = playlistResults.flatMap((result) => result.pack.rounds);
     const dedupedRounds = Array.from(new Map(allRounds.map((round) => [round.roundId, round] as const)).values());
     const combinedHash = stableHash({
-      batteryHash: battery.hash,
       packs: playlistResults.map((result) => result.hash).sort(),
       roundIds: dedupedRounds.map((round) => round.roundId),
     });
 
-    const sources = [battery.source, ...playlistResults.map((result) => result.source)];
+    const sources = playlistResults.map((result) => result.source);
     const source: GamePackLoadResult["source"] =
       sources.every((item) => item === "cache")
         ? "cache"
         : sources.every((item) => item === "fresh")
           ? "fresh"
           : "mixed";
-
-    db.close();
     return {
       pack: {
         meta: {
@@ -449,7 +412,6 @@ export async function loadGamePack(
           createdAt: Date.now(),
           roundCount: dedupedRounds.length,
           playlistIds: safePlaylistIds,
-          batteryVersion: battery.version,
         },
         rounds: dedupedRounds,
       },
@@ -460,6 +422,8 @@ export async function loadGamePack(
       pack: fallbackGamePack(roomId),
       source: "memory",
     };
+  } finally {
+    db?.close();
   }
 }
 

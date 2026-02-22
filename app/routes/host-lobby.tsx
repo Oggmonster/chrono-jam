@@ -152,17 +152,19 @@ export default function HostLobby({ params }: Route.ComponentProps) {
     }
 
     setSelectedPlaylistIds((current) => {
-      const next = room.state.playlistIds.length > 0 ? room.state.playlistIds : ["core-pop"];
+      const next =
+        room.state.playlistIds.length > 0
+          ? room.state.playlistIds
+          : playlistCatalog.length > 0
+            ? [playlistCatalog[0]!.id]
+            : [];
       return current.join(",") === next.join(",") ? current : next;
     });
     setRequestedSongCount((current) => (current === room.state.gameSongCount ? current : room.state.gameSongCount));
-  }, [room.state.gameSongCount, room.state.playlistIds, settingsDirty]);
+  }, [playlistCatalog, room.state.gameSongCount, room.state.playlistIds, settingsDirty]);
 
   const playlistEntries = useMemo<PlaylistCatalogEntry[]>(() => {
-    const baseEntries =
-      playlistCatalog.length > 0
-        ? playlistCatalog
-        : [{ id: "core-pop", name: "Core Pop", version: 1, roundCount: defaultGameSongCount }];
+    const baseEntries = playlistCatalog;
     const knownIds = new Set(baseEntries.map((entry) => entry.id));
     const missingSelected = selectedPlaylistIds
       .filter((playlistId) => !knownIds.has(playlistId))
@@ -186,7 +188,7 @@ export default function HostLobby({ params }: Route.ComponentProps) {
       return [playlistEntries[0]!.id];
     }
 
-    return ["core-pop"];
+    return [];
   }, [playlistEntries, selectedPlaylistIds]);
 
   const selectedRoundCapacity = useMemo(() => {
@@ -285,7 +287,7 @@ export default function HostLobby({ params }: Route.ComponentProps) {
           <Badge variant="warning">Host</Badge>
           <GameTitle className="text-2xl md:text-3xl">Game Lobby</GameTitle>
           <GameSubtitle>
-            {activePlaylistText || "Core Pop"} - {room.state.gameSongCount} songs
+            {activePlaylistText || "No playlists selected"} - {room.state.gameSongCount} songs
           </GameSubtitle>
         </div>
 

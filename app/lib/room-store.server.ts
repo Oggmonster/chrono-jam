@@ -1,5 +1,5 @@
 import {
-  defaultPlaylistIds as defaultPackPlaylistIds,
+  normalizePlaylistIdsForCatalog,
   loadRoundsForPlaylistIds,
   type PlaylistRound,
 } from "~/lib/playlist-rounds.server";
@@ -10,7 +10,9 @@ import {
 } from "~/lib/game-settings";
 import { buildTimelineEntries, clampTimelineInsertIndex } from "~/lib/timeline";
 
-const defaultRoomPlaylistIds = [...defaultPackPlaylistIds];
+function resolveRoomPlaylistIds(playlistIds: string[]) {
+  return normalizePlaylistIdsForCatalog(playlistIds);
+}
 
 type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
 type RoomLifecycle = "lobby" | "running" | "finished";
@@ -226,7 +228,7 @@ function buildRoomRounds(
 }
 
 export function createStoredRoomState(roomId: string, at = nowMs()): StoredRoomState {
-  const playlistIds = [...defaultRoomPlaylistIds];
+  const playlistIds = resolveRoomPlaylistIds([]);
   const { rounds, gameSongCount } = buildRoomRounds(playlistIds, defaultGameSongCount);
   return {
     roomId,
@@ -355,15 +357,13 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
   }
 
   const playlistIds = Array.isArray(state.playlistIds)
-    ? [
-        ...new Set(
-          state.playlistIds
-            .filter((playlistId): playlistId is string => typeof playlistId === "string")
-            .map((playlistId) => playlistId.trim())
-            .filter((playlistId) => playlistId.length > 0),
-        ),
-      ]
-    : [...defaultRoomPlaylistIds];
+    ? resolveRoomPlaylistIds(
+        state.playlistIds
+          .filter((playlistId): playlistId is string => typeof playlistId === "string")
+          .map((playlistId) => playlistId.trim())
+          .filter((playlistId) => playlistId.length > 0),
+      )
+    : resolveRoomPlaylistIds([]);
   const requestedGameSongCount =
     parseGameSongCount((state as { gameSongCount?: unknown }).gameSongCount) ??
     (Array.isArray(state.rounds) ? parseGameSongCount(state.rounds.length) : null) ??
@@ -480,7 +480,7 @@ function sanitizeState(roomId: string, incoming: unknown): StoredRoomState {
     guessSubmissions,
     timelineSubmissions,
     preloadReadiness,
-    playlistIds: playlistIds.length > 0 ? playlistIds : [...defaultRoomPlaylistIds],
+    playlistIds,
     gameSongCount,
     rounds,
     timelineRoundIds,
@@ -555,7 +555,7 @@ function ensureRoomState(roomId: string, options: { notifyOnPrune?: boolean } = 
   }
 
   if (!Array.isArray(existing.playlistIds) || existing.playlistIds.length === 0) {
-    const playlistIds = [...defaultRoomPlaylistIds];
+    const playlistIds = resolveRoomPlaylistIds([]);
     const { rounds, gameSongCount } = buildRoomRounds(
       playlistIds,
       parseGameSongCount((existing as { gameSongCount?: unknown }).gameSongCount) ?? defaultGameSongCount,
@@ -563,6 +563,22 @@ function ensureRoomState(roomId: string, options: { notifyOnPrune?: boolean } = 
     const patched = {
       ...existing,
       playlistIds,
+      gameSongCount,
+      rounds,
+      updatedAt: nowMs(),
+    };
+    return setStoredRoomState(roomId, patched, { notify: false });
+  }
+
+  const normalizedPlaylistIds = resolveRoomPlaylistIds(existing.playlistIds);
+  if (normalizedPlaylistIds.join(",") !== existing.playlistIds.join(",")) {
+    const { rounds, gameSongCount } = buildRoomRounds(
+      normalizedPlaylistIds,
+      parseGameSongCount((existing as { gameSongCount?: unknown }).gameSongCount) ?? defaultGameSongCount,
+    );
+    const patched = {
+      ...existing,
+      playlistIds: normalizedPlaylistIds,
       gameSongCount,
       rounds,
       updatedAt: nowMs(),
@@ -914,7 +930,7 @@ export function updateRoomPlaylistIds(roomId: string, playlistIds: string[]): St
     ),
   ];
 
-  const nextPlaylistIds = sanitized.length > 0 ? sanitized : [...defaultRoomPlaylistIds];
+  const nextPlaylistIds = resolveRoomPlaylistIds(sanitized);
   if (nextPlaylistIds.join(",") === base.playlistIds.join(",")) {
     return base;
   }
@@ -995,7 +1011,7 @@ export function applyRoomLobbySetup(
         .filter((playlistId) => playlistId.length > 0),
     ),
   ];
-  const nextPlaylistIds = sanitizedPlaylistIds.length > 0 ? sanitizedPlaylistIds : [...defaultRoomPlaylistIds];
+  const nextPlaylistIds = resolveRoomPlaylistIds(sanitizedPlaylistIds);
   const requestedSongCount = parseGameSongCount(setup.songCount) ?? base.gameSongCount;
   const { rounds, gameSongCount } = buildRoomRounds(nextPlaylistIds, requestedSongCount, {
     preferredRoundIds: [],
