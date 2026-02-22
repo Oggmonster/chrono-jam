@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { mockRounds } from "~/lib/mock-room";
+import { cleanTrackTitle } from "~/lib/track-metadata";
 
 export type PlaylistRound = {
   id: string;
@@ -12,6 +13,7 @@ export type PlaylistRound = {
   year: number;
   spotifyUri: string;
   startMs: number;
+  coverUrl?: string;
 };
 
 const playlistDataDir = path.join(process.cwd(), "public", "game-data", "playlists");
@@ -38,6 +40,7 @@ type PlaylistPackAsset = {
     year: number;
     spotifyUri: string;
     startMs: number;
+    coverUrl?: string;
   }>;
 };
 
@@ -58,6 +61,7 @@ function fallbackRounds(): PlaylistRound[] {
     year: round.year,
     spotifyUri: round.spotifyUri,
     startMs: round.startMs,
+    coverUrl: round.coverUrl,
   }));
 }
 
@@ -190,7 +194,7 @@ function loadPackRounds(playlistId: string, version: number) {
     rounds.push({
       id: rawRound.roundId.trim(),
       trackId: rawRound.trackId.trim(),
-      title: rawRound.trackName.trim(),
+      title: cleanTrackTitle(rawRound.trackName.trim()) || rawRound.trackName.trim(),
       artistId: rawRound.artistId.trim(),
       artist: rawRound.artistName.trim(),
       year: Math.floor(rawRound.year),
@@ -199,6 +203,10 @@ function loadPackRounds(playlistId: string, version: number) {
         typeof rawRound.startMs === "number" && Number.isFinite(rawRound.startMs)
           ? Math.max(0, Math.floor(rawRound.startMs))
           : 0,
+      coverUrl:
+        typeof rawRound.coverUrl === "string" && rawRound.coverUrl.trim().length > 0
+          ? rawRound.coverUrl.trim()
+          : undefined,
     });
   }
 

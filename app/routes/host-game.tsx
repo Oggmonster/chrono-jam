@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-game";
 import { Link } from "react-router";
-import { FastForward, Home, Play, Radio } from "lucide-react";
+import { FastForward, Home, Music, Play, Radio } from "lucide-react";
 
 import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -260,6 +260,8 @@ export default function HostGame({ params }: Route.ComponentProps) {
       points: room.state.scores[participant.id] ?? 0,
     }))
     .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+  const finishedGame = room.state.lifecycle === "finished";
+  const songsUsed = room.state.rounds;
 
   return (
     <GameLayout className="mx-auto max-w-3xl">
@@ -301,17 +303,31 @@ export default function HostGame({ params }: Route.ComponentProps) {
                 </div>
               </div>
             ) : (
-              <div>
-                <p className="text-xl font-bold text-card-foreground">{room.round.title}</p>
-                <p className="font-semibold text-muted-foreground">{room.round.artist}</p>
-                <p className="text-sm text-muted-foreground">Year: {room.round.year}</p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                {room.round.coverUrl ? (
+                  <img
+                    src={room.round.coverUrl}
+                    alt={`${room.round.title} cover art`}
+                    className="h-48 w-full max-w-full shrink-0 rounded-lg border border-border object-cover sm:h-48 sm:w-48"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex h-48 w-full max-w-full shrink-0 items-center justify-center rounded-lg border border-border bg-muted/60 sm:h-48 sm:w-48">
+                    <Radio className="h-14 w-14 text-muted-foreground" />
+                  </div>
+                )}
+                <div>
+                  <p className="text-xl font-bold text-card-foreground">{room.round.title}</p>
+                  <p className="font-semibold text-muted-foreground">{room.round.artist}</p>
+                  <p className="text-sm text-muted-foreground">Year: {room.round.year}</p>
+                </div>
               </div>
             )}
           </div>
         </GameCard>
 
         <GameCard className="p-5">
-          <h3 className="mb-4 font-bold text-card-foreground">Live Leaderboard</h3>
+          <h3 className="mb-4 font-bold text-card-foreground">{finishedGame ? "Final Standings" : "Live Leaderboard"}</h3>
           <div className="stagger-children flex flex-col gap-2">
             {leaderboard.map((entry, index) => (
               <div
@@ -338,6 +354,45 @@ export default function HostGame({ params }: Route.ComponentProps) {
             {leaderboard.length === 0 ? <p className="text-center text-sm text-muted-foreground">No players in room.</p> : null}
           </div>
         </GameCard>
+
+        {finishedGame ? (
+          <GameCard className="p-5">
+            <h3 className="mb-4 flex items-center gap-2 font-bold text-card-foreground">
+              <Music className="h-4 w-4 text-[hsl(var(--accent))]" />
+              Songs Used
+            </h3>
+            {songsUsed.length > 0 ? (
+              <ol className="space-y-2">
+                {songsUsed.map((round, index) => (
+                  <li key={round.id} className="flex items-center gap-3 rounded-xl border border-border bg-muted/35 p-3">
+                    {round.coverUrl ? (
+                      <img
+                        src={round.coverUrl}
+                        alt={`${round.title} cover art`}
+                        className="h-14 w-14 shrink-0 rounded-md border border-border object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-border bg-muted/60">
+                        <Music className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-card-foreground">{round.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">{round.artist}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono text-sm font-bold text-card-foreground">{round.year}</p>
+                      <p className="text-[10px] text-muted-foreground">#{index + 1}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-muted-foreground">No rounds recorded for this game.</p>
+            )}
+          </GameCard>
+        ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">
           <GameCard className="p-5">

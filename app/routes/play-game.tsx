@@ -411,6 +411,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const intermissionCompactView = intermissionOpen;
   const layoutWidthClass = room.state.phase === "REVEAL" || intermissionCompactView || finishedGame ? "max-w-lg" : "max-w-3xl";
   const winnerScore = leaderboard[0]?.score ?? currentScore;
+  const songsPlayed = room.state.rounds;
 
   return (
     <GameLayout className={`mx-auto ${layoutWidthClass}`}>
@@ -507,15 +508,61 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 <p className="text-sm font-bold text-[hsl(var(--primary))]">Winning score: {winnerScore}</p>
               </div>
             </GameCard>
+
+            <GameCard className="p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Music className="h-4 w-4 text-[hsl(var(--accent))]" />
+                <p className="text-sm font-bold text-card-foreground">Songs Played</p>
+              </div>
+              {songsPlayed.length > 0 ? (
+                <ol className="space-y-2">
+                  {songsPlayed.map((round, index) => (
+                    <li key={round.id} className="flex items-center gap-3 rounded-xl border border-border bg-muted/35 p-3">
+                      {round.coverUrl ? (
+                        <img
+                          src={round.coverUrl}
+                          alt={`${round.title} cover art`}
+                          className="h-12 w-12 shrink-0 rounded-md border border-border object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border bg-muted/60">
+                          <Music className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-card-foreground">{round.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{round.artist}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-sm font-bold text-card-foreground">{round.year}</p>
+                        <p className="text-[10px] text-muted-foreground">#{index + 1}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-xs font-semibold text-muted-foreground">No rounds recorded for this game.</p>
+              )}
+            </GameCard>
           </>
         ) : room.state.phase === "REVEAL" ? (
           <>
             <GameCard className="relative overflow-hidden border-accent/30 p-6">
               <div className="absolute inset-x-0 top-0 h-1 bg-[hsl(var(--accent))]" />
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/10">
-                  <Music className="h-7 w-7 text-[hsl(var(--accent))]" />
-                </div>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                {room.round.coverUrl ? (
+                  <img
+                    src={room.round.coverUrl}
+                    alt={`${room.round.title} cover art`}
+                    className="h-44 w-full max-w-full shrink-0 rounded-xl border border-border object-cover sm:h-44 sm:w-44"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex h-44 w-full max-w-full shrink-0 items-center justify-center rounded-xl bg-accent/10 sm:h-44 sm:w-44">
+                    <Music className="h-16 w-16 text-[hsl(var(--accent))]" />
+                  </div>
+                )}
                 <div>
                   <p className="text-2xl font-bold text-card-foreground">{room.round.title}</p>
                   <p className="text-base font-semibold text-muted-foreground">{room.round.artist}</p>
@@ -586,33 +633,55 @@ export default function PlayGame({ params }: Route.ComponentProps) {
           <Card>
             <CardContent className="space-y-6 p-8 text-center">
               <div className="flex flex-col items-center gap-6">
-                <CatMascot variant="chill" size="lg" className="animate-float" />
-
                 <div>
                   <p className="text-xl font-bold text-card-foreground">Intermission</p>
                   <p className="text-sm text-muted-foreground">Quick vibe check before the next song</p>
                 </div>
 
-                <Equalizer className="h-8" />
+                <div className="w-full max-w-md rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.35)] p-3 text-left">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Song Revealed</p>
+                  <div className="flex items-start gap-3">
+                    {room.round.coverUrl ? (
+                      <img
+                        src={room.round.coverUrl}
+                        alt={`${room.round.title} cover art`}
+                        className="h-24 w-24 shrink-0 rounded-lg border border-border object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/60">
+                        <Music className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 text-lg font-bold text-card-foreground">{room.round.title}</p>
+                      <p className="line-clamp-1 text-sm font-semibold text-muted-foreground">{room.round.artist}</p>
+                      <p className="mt-1 text-xs font-semibold text-muted-foreground">Released in {room.round.year}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative max-w-sm rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)] p-4">
+                  <div className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-b border-r border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)]" />
+                  <div className="relative">
+                    <Quote className="absolute -left-0.5 -top-0.5 h-4 w-4 text-[hsl(var(--primary)/0.4)]" />
+                    <Quote className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rotate-180 text-[hsl(var(--primary)/0.4)]" />
+                    <p className="pl-5 pr-5 text-sm italic leading-relaxed text-card-foreground">
+                      {intermissionQuote}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center gap-2">
+                  <CatMascot variant="chill" size="lg" className="animate-float" />
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Cat Wisdom</p>
+                </div>
 
                 <div className="flex items-center justify-center">
                   <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.05)]">
                     <span className="animate-count-pulse font-mono text-3xl font-bold text-[hsl(var(--primary))]">
                       {remainingSeconds}
                     </span>
-                  </div>
-                </div>
-
-                <div className="relative max-w-sm rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)] p-4">
-                  <div className="absolute -top-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-l border-t border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.5)]" />
-                  <div className="relative">
-                    <Quote className="absolute -left-0.5 -top-0.5 h-4 w-4 text-[hsl(var(--primary)/0.4)]" />
-                    <p className="pl-5 text-sm italic leading-relaxed text-card-foreground">
-                      {`"${intermissionQuote}"`}
-                    </p>
-                    <p className="mt-2 pl-5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Cat Wisdom
-                    </p>
                   </div>
                 </div>
               </div>

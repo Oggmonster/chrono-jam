@@ -7,6 +7,7 @@ export type MockRound = {
   year: number;
   spotifyUri: string;
   startMs: number;
+  coverUrl?: string;
 };
 
 export const mockRounds: MockRound[] = [

@@ -14,6 +14,7 @@ export type RoomRound = {
   year: number;
   spotifyUri: string;
   startMs: number;
+  coverUrl?: string;
 };
 
 export type GamePhase = "LISTEN" | "REVEAL" | "INTERMISSION";
@@ -178,6 +179,7 @@ function fallbackRounds(): RoomRound[] {
     year: round.year,
     spotifyUri: round.spotifyUri,
     startMs: round.startMs,
+    coverUrl: round.coverUrl,
   }));
 }
 
@@ -275,7 +277,9 @@ function normalizeRoomState(state: RoomState): RoomState {
           typeof round?.spotifyUri === "string" &&
           round.spotifyUri.trim().length > 0 &&
           typeof round?.startMs === "number" &&
-          Number.isFinite(round.startMs),
+          Number.isFinite(round.startMs) &&
+          (typeof round?.coverUrl === "undefined" ||
+            (typeof round.coverUrl === "string" && round.coverUrl.trim().length > 0)),
       )
     : [];
   const safeRounds = rounds.length > 0 ? rounds : fallbackRounds();

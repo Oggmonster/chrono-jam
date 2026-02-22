@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { CatalogEntry, GamePackRound } from "~/lib/gamepack";
+import { cleanTrackTitle, hasRemasterMarker } from "~/lib/track-metadata";
 import {
   getSpotifyClientId,
   getSpotifyClientSecret,
@@ -32,9 +33,17 @@ type SpotifyPlaylistTracksResponse = {
       type: string;
       is_local?: boolean;
       duration_ms?: number;
+      external_ids?: {
+        isrc?: string;
+      };
       artists?: Array<{ id: string | null; name: string }>;
       album?: {
         release_date?: string;
+        images?: Array<{
+          url?: string;
+          width?: number | null;
+          height?: number | null;
+        }>;
       };
     } | null;
     track?: {
@@ -43,13 +52,31 @@ type SpotifyPlaylistTracksResponse = {
       type: string;
       is_local: boolean;
       duration_ms?: number;
+      external_ids?: {
+        isrc?: string;
+      };
       artists: Array<{ id: string | null; name: string }>;
       album?: {
         release_date?: string;
+        images?: Array<{
+          url?: string;
+          width?: number | null;
+          height?: number | null;
+        }>;
       };
     } | null;
   }>;
   next: string | null;
+};
+
+type SpotifyTrackSearchResponse = {
+  tracks?: {
+    items?: Array<{
+      album?: {
+        release_date?: string;
+      };
+    }>;
+  };
 };
 
 type PlaylistPackAsset = {
@@ -105,6 +132,7 @@ type PlaylistRoundSeed = {
   year: number;
   spotifyUri: string;
   startMs: number;
+  coverUrl?: string;
 };
 
 function parseSpotifyPlaylistId(rawValue: string) {
@@ -153,6 +181,21 @@ function parseReleaseYear(releaseDate: string | undefined) {
   }
 
   return year;
+}
+
+function pickCoverUrl(images: Array<{ url?: string }> | undefined) {
+  if (!Array.isArray(images) || images.length === 0) {
+    return undefined;
+  }
+
+  for (const image of images) {
+    const url = typeof image?.url === "string" ? image.url.trim() : "";
+    if (url) {
+      return url;
+    }
+  }
+
+  return undefined;
 }
 
 function buildRoundStartMs(durationMs: number | undefined) {
@@ -298,16 +341,56 @@ async function fetchPlaylistMeta(playlistId: string, candidates: TokenCandidate[
   return (await response.json()) as SpotifyPlaylistMetaResponse;
 }
 
+async function fetchOriginalReleaseYearByIsrc(
+  isrc: string | undefined,
+  candidates: TokenCandidate[],
+  cache: Map<string, number | null>,
+) {
+  const normalizedIsrc = isrc?.trim().toUpperCase() ?? "";
+  if (!normalizedIsrc) {
+    return null;
+  }
+
+  if (cache.has(normalizedIsrc)) {
+    return cache.get(normalizedIsrc) ?? null;
+  }
+
+  const query = encodeURIComponent(`isrc:${normalizedIsrc}`);
+  try {
+    const response = await spotifyGetWithCandidates(
+      `https://api.spotify.com/v1/search?type=track&limit=50&q=${query}`,
+      candidates,
+    );
+    const payload = (await response.json()) as SpotifyTrackSearchResponse;
+    const years = (payload.tracks?.items ?? [])
+      .map((item) => parseReleaseYear(item.album?.release_date))
+      .filter((year): year is number => typeof year === "number");
+    if (years.length === 0) {
+      cache.set(normalizedIsrc, null);
+      return null;
+    }
+
+    const earliest = Math.min(...years);
+    const safeYear = Number.isFinite(earliest) ? earliest : null;
+    cache.set(normalizedIsrc, safeYear);
+    return safeYear;
+  } catch {
+    cache.set(normalizedIsrc, null);
+    return null;
+  }
+}
+
 async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandidate[]) {
   const tracks: CatalogEntry[] = [];
   const artists: CatalogEntry[] = [];
   const roundSeeds: PlaylistRoundSeed[] = [];
   const seenTrackIds = new Set<string>();
   const seenArtistIds = new Set<string>();
+  const isrcOriginalYearCache = new Map<string, number | null>();
 
   let nextUrl: string | null =
     `https://api.spotify.com/v1/playlists/${playlistId}/items` +
-    `?limit=100&offset=0&fields=items(item(id,name,type,is_local,duration_ms,artists(id,name),album(release_date))),next`;
+    `?limit=100&offset=0&fields=items(item(id,name,type,is_local,duration_ms,external_ids(isrc),artists(id,name),album(release_date,images(url,height,width))),track(id,name,type,is_local,duration_ms,external_ids(isrc),artists(id,name),album(release_date,images(url,height,width)))),next`;
   while (nextUrl) {
     const response = await spotifyGetWithCandidates(nextUrl, candidates);
     const page = (await response.json()) as SpotifyPlaylistTracksResponse;
@@ -318,7 +401,9 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
       }
 
       const trackId = track.id?.trim() ?? "";
-      const trackName = track.name.trim();
+      const rawTrackName = track.name.trim();
+      const cleanedTrackName = cleanTrackTitle(rawTrackName);
+      const trackName = cleanedTrackName || rawTrackName;
       if (!trackId || !trackName) {
         continue;
       }
@@ -346,7 +431,13 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
         });
       }
 
-      const releaseYear = parseReleaseYear(track.album?.release_date);
+      const albumReleaseYear = parseReleaseYear(track.album?.release_date);
+      const hasRemaster = hasRemasterMarker(rawTrackName);
+      const originalReleaseYear =
+        hasRemaster
+          ? await fetchOriginalReleaseYearByIsrc(track.external_ids?.isrc, candidates, isrcOriginalYearCache)
+          : null;
+      const releaseYear = originalReleaseYear ?? albumReleaseYear;
       const primaryArtist = artistList.find(
         (artist) => typeof artist.id === "string" && artist.id.trim().length > 0 && artist.name.trim().length > 0,
       );
@@ -362,6 +453,7 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
         year: releaseYear,
         spotifyUri: `spotify:track:${trackId}`,
         startMs: buildRoundStartMs(track.duration_ms),
+        coverUrl: pickCoverUrl(track.album?.images),
       });
     }
 
@@ -505,6 +597,7 @@ export async function generatePlaylistPackFromPlaylist(
     year: seed.year,
     spotifyUri: seed.spotifyUri,
     startMs: seed.startMs,
+    coverUrl: seed.coverUrl,
   }));
 
   if (rounds.length === 0) {

@@ -4,7 +4,7 @@
     {
       "id": "60s",
       "name": "60s",
-      "version": 1,
+      "version": 2,
       "sourcePlaylistId": "3HJwuMdumqoeQb7NBG7YfC",
       "sourcePlaylistName": "60s",
       "trackCount": 503,
@@ -14,7 +14,7 @@
     {
       "id": "70s",
       "name": "70s",
-      "version": 1,
+      "version": 2,
       "sourcePlaylistId": "3Gbk04hSzBmQ7X2C8bUksZ",
       "sourcePlaylistName": "70s",
       "trackCount": 344,
@@ -24,7 +24,7 @@
     {
       "id": "80s",
       "name": "80s",
-      "version": 1,
+      "version": 2,
       "sourcePlaylistId": "4qjxtJDQ7gV9R2JTGkmhPG",
       "sourcePlaylistName": "80s",
       "trackCount": 457,
@@ -34,13 +34,13 @@
     {
       "id": "90s",
       "name": "90s",
-      "version": 1,
+      "version": 2,
       "sourcePlaylistId": "2rp6DqdLZwwsMxd7Sb7zHB",
       "sourcePlaylistName": "90s",
       "trackCount": 614,
       "artistCount": 368,
       "roundCount": 614
-    },    
+    },
     {
       "id": "mello",
       "name": "Mello Quiz",

@@ -4,6 +4,7 @@ import {
   type AutocompleteIndex,
 } from "~/lib/autocomplete";
 import { mockRounds } from "~/lib/mock-room";
+import { cleanTrackTitle } from "~/lib/track-metadata";
 
 export type CatalogEntry = {
   id: string;
@@ -19,6 +20,7 @@ export type GamePackRound = {
   year: number;
   spotifyUri: string;
   startMs: number;
+  coverUrl?: string;
 };
 
 type PlaylistPackAsset = {
@@ -164,6 +166,33 @@ async function fetchJsonAsset<T>(path: string) {
   return (await response.json()) as T;
 }
 
+function sanitizeCatalogEntry(entry: CatalogEntry): CatalogEntry {
+  const id = entry.id.trim();
+  const display = cleanTrackTitle(entry.display);
+  return {
+    id,
+    display: display || entry.display.trim(),
+  };
+}
+
+function sanitizeRound(round: GamePackRound): GamePackRound {
+  const trackName = cleanTrackTitle(round.trackName);
+  const coverUrl = typeof round.coverUrl === "string" && round.coverUrl.trim().length > 0 ? round.coverUrl.trim() : undefined;
+  return {
+    ...round,
+    trackName: trackName || round.trackName.trim(),
+    coverUrl,
+  };
+}
+
+function sanitizePlaylistPack(asset: PlaylistPackAsset): PlaylistPackAsset {
+  return {
+    ...asset,
+    tracks: asset.tracks.map(sanitizeCatalogEntry),
+    rounds: asset.rounds.map(sanitizeRound),
+  };
+}
+
 async function readMeta(db: IDBDatabase, key: string) {
   const tx = db.transaction(storeMeta, "readonly");
   const request = tx.objectStore(storeMeta).get(key);
@@ -216,6 +245,7 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
 
   const knownIds = new Set(existing.map((entry) => entry.id));
   const knownNormDisplays = new Set(existing.map((entry) => normalizeForAutocomplete(entry.display)));
+  const existingById = new Map(existing.map((entry) => [entry.id, entry] as const));
   const tx = db.transaction(storeName, "readwrite");
   const store = tx.objectStore(storeName);
 
@@ -231,7 +261,21 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
       continue;
     }
 
-    if (knownIds.has(id) || knownNormDisplays.has(normDisplay)) {
+    const existingEntry = existingById.get(id);
+    if (existingEntry) {
+      if (existingEntry.display !== display) {
+        store.put({ id, display });
+        const existingNorm = normalizeForAutocomplete(existingEntry.display);
+        if (existingNorm) {
+          knownNormDisplays.delete(existingNorm);
+        }
+        knownNormDisplays.add(normDisplay);
+        existingById.set(id, { id, display });
+      }
+      continue;
+    }
+
+    if (knownNormDisplays.has(normDisplay)) {
       continue;
     }
 
@@ -311,10 +355,11 @@ async function ensurePlaylistPack(
   if (existing && existing.version === version) {
     const cachedPack = await readStoredPlaylistPack(db, playlistId, version);
     if (cachedPack) {
+      const sanitizedCachedPack = sanitizePlaylistPack(cachedPack);
       return {
         source: "cache",
         hash: existing.hash,
-        pack: cachedPack,
+        pack: sanitizedCachedPack,
       };
     }
   }
@@ -323,15 +368,16 @@ async function ensurePlaylistPack(
   if (asset.kind !== "playlist-pack" || asset.playlistId !== playlistId || asset.version !== version) {
     throw new Error(`Invalid playlist pack: ${playlistId}`);
   }
+  const sanitizedAsset = sanitizePlaylistPack(asset);
 
-  await mergeCatalogEntries(db, storeTracks, asset.tracks);
-  await mergeCatalogEntries(db, storeArtists, asset.artists);
+  await mergeCatalogEntries(db, storeTracks, sanitizedAsset.tracks);
+  await mergeCatalogEntries(db, storeArtists, sanitizedAsset.artists);
 
-  const hash = stableHash(asset);
-  await writeStoredPlaylistPack(db, asset, hash);
+  const hash = stableHash(sanitizedAsset);
+  await writeStoredPlaylistPack(db, sanitizedAsset, hash);
   await writeMeta(db, {
     key: metaKey,
-    version: asset.version,
+    version: sanitizedAsset.version,
     hash,
     updatedAt: Date.now(),
   });
@@ -339,7 +385,7 @@ async function ensurePlaylistPack(
   return {
     source: "fresh",
     hash,
-    pack: asset,
+    pack: sanitizedAsset,
   };
 }
 
@@ -353,6 +399,7 @@ function fallbackGamePack(roomId: string): GamePack {
     year: round.year,
     spotifyUri: round.spotifyUri,
     startMs: round.startMs,
+    coverUrl: round.coverUrl,
   }));
 
   return {
