@@ -2,6 +2,46 @@
   "kind": "playlist-catalog",
   "playlists": [
     {
+      "id": "60s",
+      "name": "60s",
+      "version": 1,
+      "sourcePlaylistId": "3HJwuMdumqoeQb7NBG7YfC",
+      "sourcePlaylistName": "60s",
+      "trackCount": 503,
+      "artistCount": 246,
+      "roundCount": 503
+    },
+    {
+      "id": "70s",
+      "name": "70s",
+      "version": 1,
+      "sourcePlaylistId": "3Gbk04hSzBmQ7X2C8bUksZ",
+      "sourcePlaylistName": "70s",
+      "trackCount": 344,
+      "artistCount": 218,
+      "roundCount": 345
+    },
+    {
+      "id": "80s",
+      "name": "80s",
+      "version": 1,
+      "sourcePlaylistId": "4qjxtJDQ7gV9R2JTGkmhPG",
+      "sourcePlaylistName": "80s",
+      "trackCount": 457,
+      "artistCount": 251,
+      "roundCount": 457
+    },
+    {
+      "id": "90s",
+      "name": "90s",
+      "version": 1,
+      "sourcePlaylistId": "2rp6DqdLZwwsMxd7Sb7zHB",
+      "sourcePlaylistName": "90s",
+      "trackCount": 614,
+      "artistCount": 368,
+      "roundCount": 614
+    },
+    {
       "id": "core-pop",
       "name": "Core Pop",
       "version": 1,
