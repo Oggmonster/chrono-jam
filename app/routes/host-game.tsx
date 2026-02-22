@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-game";
 import { Link } from "react-router";
-import { FastForward, Home, Music, Play, Radio } from "lucide-react";
+import { FastForward, Home, Music, Radio } from "lucide-react";
 
 import { CatMascot, Equalizer, GameCard, GameLayout, TimerBar } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
@@ -394,25 +394,7 @@ export default function HostGame({ params }: Route.ComponentProps) {
           </GameCard>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <GameCard className="p-5">
-            <h3 className="mb-4 font-bold text-card-foreground">Round Controls</h3>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="success"
-                onClick={() => {
-                  interactionUnlockedRef.current = true;
-                  setInteractionUnlocked(true);
-                  void initializeSpotify();
-                  room.controls.startGame();
-                }}
-              >
-                <Play className="h-4 w-4" />
-                Start
-              </Button>
-            </div>
-          </GameCard>
-
+        <div className="grid gap-4">
           <GameCard className="p-5">
             <h3 className="mb-4 font-bold text-card-foreground">Spotify Playback</h3>
             <div className="flex flex-col gap-3">
