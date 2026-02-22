@@ -1,7 +1,13 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { CatalogEntry, GamePackRound } from "~/lib/gamepack";
+import {
+  buildBasePlaylistSelectionId,
+  buildUserPlaylistSelectionId,
+  normalizeSpotifyUserIdForStorage,
+  parsePlaylistSelectionId,
+} from "~/lib/playlist-selection";
 import { cleanTrackTitle, hasRemasterMarker } from "~/lib/track-metadata";
 import {
   getSpotifyClientId,
@@ -88,7 +94,7 @@ type PlaylistPackAsset = {
   rounds: GamePackRound[];
 };
 
-type PlaylistCatalogAsset = {
+export type PlaylistCatalogAsset = {
   kind: "playlist-catalog";
   playlists: Array<{
     id: string;
@@ -114,6 +120,25 @@ export type GeneratePlaylistPackResult = {
   roundCount: number;
 };
 
+export type GenerateUserPlaylistPackResult = GeneratePlaylistPackResult & {
+  hostSpotifyUserId: string;
+};
+
+export type HostPlaylistCatalogEntry = {
+  selectionId: string;
+  playlistId: string;
+  name: string;
+  version: number;
+  roundCount: number;
+  scope: "base" | "user";
+  removable: boolean;
+};
+
+export type HostPlaylistCatalogResult = {
+  hostSpotifyUserId: string | null;
+  playlists: HostPlaylistCatalogEntry[];
+};
+
 type TokenCandidate = {
   token: string;
   source: "user" | "browser";
@@ -134,6 +159,10 @@ type PlaylistRoundSeed = {
   startMs: number;
   coverUrl?: string;
 };
+
+const basePlaylistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
+const basePlaylistIndexPath = path.join(basePlaylistsDir, "index.json");
+const userPlaylistsRootDir = path.join(process.cwd(), "public", "game-data", "user-playlists");
 
 function parseSpotifyPlaylistId(rawValue: string) {
   const value = rawValue.trim();
@@ -489,8 +518,7 @@ async function userTokenCandidateFromRequest(request: Request): Promise<TokenCan
   }
 }
 
-async function nextPlaylistPackVersion(playlistPackId: string) {
-  const playlistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
+async function nextPlaylistPackVersion(playlistPackId: string, playlistsDir: string) {
   await mkdir(playlistsDir, { recursive: true });
 
   const escapedPackId = playlistPackId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -513,10 +541,7 @@ async function nextPlaylistPackVersion(playlistPackId: string) {
   return maxVersion + 1;
 }
 
-async function readPlaylistCatalogFile() {
-  const playlistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
-  const indexPath = path.join(playlistsDir, "index.json");
-
+async function readPlaylistCatalogFile(indexPath: string) {
   try {
     const raw = await readFile(indexPath, "utf8");
     const parsed = JSON.parse(raw) as PlaylistCatalogAsset;
@@ -533,12 +558,46 @@ async function readPlaylistCatalogFile() {
   } satisfies PlaylistCatalogAsset;
 }
 
-export async function generatePlaylistPackFromPlaylist(
+type PlaylistPackBuildResult = {
+  playlistPackId: string;
+  sourcePlaylistId: string;
+  sourcePlaylistName: string;
+  playlistName: string;
+  spotifyUserId: string;
+  tracks: CatalogEntry[];
+  artists: CatalogEntry[];
+  rounds: GamePackRound[];
+};
+
+type PlaylistPackStorageTarget = {
+  playlistsDir: string;
+  indexPath: string;
+};
+
+function collectTokenCandidates(userCandidate: TokenCandidate | null, accessTokenOverride?: string) {
+  const browserToken = accessTokenOverride?.trim() ?? "";
+  const tokenCandidates: TokenCandidate[] = [];
+
+  if (browserToken) {
+    tokenCandidates.push({
+      token: browserToken,
+      source: "browser",
+    });
+  }
+
+  if (userCandidate) {
+    tokenCandidates.push(userCandidate);
+  }
+
+  return tokenCandidates;
+}
+
+async function buildPlaylistPackFromSpotify(
   rawPlaylistPackId: string,
   rawPlaylist: string,
   request: Request,
   accessTokenOverride?: string,
-): Promise<GeneratePlaylistPackResult> {
+): Promise<PlaylistPackBuildResult> {
   const playlistPackId = normalizePlaylistPackId(rawPlaylistPackId);
   if (!playlistPackId) {
     throw new Error("Invalid pack ID. Use letters, numbers, and dashes.");
@@ -550,17 +609,7 @@ export async function generatePlaylistPackFromPlaylist(
   }
 
   const userCandidate = await userTokenCandidateFromRequest(request);
-  const browserToken = accessTokenOverride?.trim() ?? "";
-  const tokenCandidates: TokenCandidate[] = [];
-  if (browserToken) {
-    tokenCandidates.push({
-      token: browserToken,
-      source: "browser",
-    });
-  }
-  if (userCandidate) {
-    tokenCandidates.push(userCandidate);
-  }
+  const tokenCandidates = collectTokenCandidates(userCandidate, accessTokenOverride);
 
   if (tokenCandidates.length === 0) {
     throw new Error("Missing Spotify user token. Connect Spotify in host setup and retry.");
@@ -604,51 +653,264 @@ export async function generatePlaylistPackFromPlaylist(
     throw new Error("Playlist pack produced no usable rounds (missing release years/artists).");
   }
 
-  const version = await nextPlaylistPackVersion(playlistPackId);
-  const fileName = `${playlistPackId}.v${version}.json`;
-  const playlistsDir = path.join(process.cwd(), "public", "game-data", "playlists");
-  const playlistPackPath = path.join(playlistsDir, fileName);
-  const indexPath = path.join(playlistsDir, "index.json");
-
-  const payload: PlaylistPackAsset = {
-    kind: "playlist-pack",
-    playlistId: playlistPackId,
-    version,
+  return {
+    playlistPackId,
+    sourcePlaylistId: meta.id,
+    sourcePlaylistName: meta.name,
+    playlistName: meta.name,
+    spotifyUserId: userId,
     tracks: catalog.tracks,
     artists: catalog.artists,
     rounds,
   };
+}
 
-  const existingCatalog = await readPlaylistCatalogFile();
+async function writePlaylistPack(
+  buildResult: PlaylistPackBuildResult,
+  storage: PlaylistPackStorageTarget,
+): Promise<GeneratePlaylistPackResult> {
+  const version = await nextPlaylistPackVersion(buildResult.playlistPackId, storage.playlistsDir);
+  const fileName = `${buildResult.playlistPackId}.v${version}.json`;
+  const playlistPackPath = path.join(storage.playlistsDir, fileName);
+
+  const payload: PlaylistPackAsset = {
+    kind: "playlist-pack",
+    playlistId: buildResult.playlistPackId,
+    version,
+    tracks: buildResult.tracks,
+    artists: buildResult.artists,
+    rounds: buildResult.rounds,
+  };
+
+  const existingCatalog = await readPlaylistCatalogFile(storage.indexPath);
   const nextCatalog: PlaylistCatalogAsset = {
     kind: "playlist-catalog",
     playlists: [
-      ...existingCatalog.playlists.filter((entry) => entry.id !== playlistPackId),
+      ...existingCatalog.playlists.filter((entry) => entry.id !== buildResult.playlistPackId),
       {
-        id: playlistPackId,
-        name: meta.name,
+        id: buildResult.playlistPackId,
+        name: buildResult.playlistName,
         version,
-        sourcePlaylistId: meta.id,
-        sourcePlaylistName: meta.name,
-        trackCount: catalog.tracks.length,
-        artistCount: catalog.artists.length,
-        roundCount: rounds.length,
+        sourcePlaylistId: buildResult.sourcePlaylistId,
+        sourcePlaylistName: buildResult.sourcePlaylistName,
+        trackCount: buildResult.tracks.length,
+        artistCount: buildResult.artists.length,
+        roundCount: buildResult.rounds.length,
       },
     ].sort((a, b) => a.id.localeCompare(b.id)),
   };
 
+  await mkdir(storage.playlistsDir, { recursive: true });
   await writeFile(playlistPackPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  await writeFile(indexPath, `${JSON.stringify(nextCatalog, null, 2)}\n`, "utf8");
+  await writeFile(storage.indexPath, `${JSON.stringify(nextCatalog, null, 2)}\n`, "utf8");
 
   return {
     version,
     fileName,
-    playlistId: playlistPackId,
-    playlistName: meta.name,
-    sourcePlaylistId: meta.id,
-    sourcePlaylistName: meta.name,
+    playlistId: buildResult.playlistPackId,
+    playlistName: buildResult.playlistName,
+    sourcePlaylistId: buildResult.sourcePlaylistId,
+    sourcePlaylistName: buildResult.sourcePlaylistName,
     trackCount: payload.tracks.length,
     artistCount: payload.artists.length,
     roundCount: payload.rounds.length,
+  };
+}
+
+function getUserPlaylistStoragePaths(spotifyUserId: string): PlaylistPackStorageTarget {
+  const safeSpotifyUserId = normalizeSpotifyUserIdForStorage(spotifyUserId);
+  if (!safeSpotifyUserId) {
+    throw new Error("Could not resolve a valid Spotify user id.");
+  }
+
+  const playlistsDir = path.join(userPlaylistsRootDir, safeSpotifyUserId);
+  return {
+    playlistsDir,
+    indexPath: path.join(playlistsDir, "index.json"),
+  };
+}
+
+async function resolveSpotifyUserIdFromRequest(request: Request, accessTokenOverride?: string) {
+  const userCandidate = await userTokenCandidateFromRequest(request);
+  const tokenCandidates = collectTokenCandidates(userCandidate, accessTokenOverride);
+  if (tokenCandidates.length === 0) {
+    return null;
+  }
+
+  try {
+    const profile = await fetchCurrentUserProfile(tokenCandidates);
+    return normalizeSpotifyUserIdForStorage(profile.id) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function generatePlaylistPackFromPlaylist(
+  rawPlaylistPackId: string,
+  rawPlaylist: string,
+  request: Request,
+  accessTokenOverride?: string,
+): Promise<GeneratePlaylistPackResult> {
+  const buildResult = await buildPlaylistPackFromSpotify(
+    rawPlaylistPackId,
+    rawPlaylist,
+    request,
+    accessTokenOverride,
+  );
+
+  return writePlaylistPack(buildResult, {
+    playlistsDir: basePlaylistsDir,
+    indexPath: basePlaylistIndexPath,
+  });
+}
+
+export async function generateUserPlaylistPackFromPlaylist(
+  rawPlaylistPackId: string,
+  rawPlaylist: string,
+  request: Request,
+  accessTokenOverride?: string,
+): Promise<GenerateUserPlaylistPackResult> {
+  const buildResult = await buildPlaylistPackFromSpotify(
+    rawPlaylistPackId,
+    rawPlaylist,
+    request,
+    accessTokenOverride,
+  );
+  const hostSpotifyUserId = normalizeSpotifyUserIdForStorage(buildResult.spotifyUserId);
+  if (!hostSpotifyUserId) {
+    throw new Error("Could not resolve a valid Spotify user id for this host.");
+  }
+
+  const generated = await writePlaylistPack(
+    buildResult,
+    getUserPlaylistStoragePaths(hostSpotifyUserId),
+  );
+
+  return {
+    ...generated,
+    hostSpotifyUserId,
+  };
+}
+
+export async function loadHostPlaylistCatalog(
+  request: Request,
+  accessTokenOverride?: string,
+): Promise<HostPlaylistCatalogResult> {
+  const baseCatalog = await readPlaylistCatalogFile(basePlaylistIndexPath);
+  const baseEntries: HostPlaylistCatalogEntry[] = baseCatalog.playlists
+    .filter(
+      (entry): entry is PlaylistCatalogAsset["playlists"][number] =>
+        typeof entry.id === "string" &&
+        entry.id.trim().length > 0 &&
+        typeof entry.name === "string" &&
+        entry.name.trim().length > 0 &&
+        typeof entry.version === "number" &&
+        Number.isFinite(entry.version) &&
+        entry.version >= 1,
+    )
+    .map((entry) => ({
+      selectionId: buildBasePlaylistSelectionId(entry.id.trim(), Math.floor(entry.version)),
+      playlistId: entry.id.trim(),
+      name: entry.name.trim(),
+      version: Math.floor(entry.version),
+      roundCount:
+        typeof entry.roundCount === "number" && Number.isFinite(entry.roundCount) && entry.roundCount > 0
+          ? Math.floor(entry.roundCount)
+          : 0,
+      scope: "base",
+      removable: false,
+    }));
+
+  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(request, accessTokenOverride);
+  if (!hostSpotifyUserId) {
+    return {
+      hostSpotifyUserId: null,
+      playlists: baseEntries,
+    };
+  }
+
+  const userCatalog = await readPlaylistCatalogFile(getUserPlaylistStoragePaths(hostSpotifyUserId).indexPath);
+  const userEntries: HostPlaylistCatalogEntry[] = userCatalog.playlists
+    .filter(
+      (entry): entry is PlaylistCatalogAsset["playlists"][number] =>
+        typeof entry.id === "string" &&
+        entry.id.trim().length > 0 &&
+        typeof entry.name === "string" &&
+        entry.name.trim().length > 0 &&
+        typeof entry.version === "number" &&
+        Number.isFinite(entry.version) &&
+        entry.version >= 1,
+    )
+    .map((entry) => ({
+      selectionId: buildUserPlaylistSelectionId(hostSpotifyUserId, entry.id.trim(), Math.floor(entry.version)),
+      playlistId: entry.id.trim(),
+      name: entry.name.trim(),
+      version: Math.floor(entry.version),
+      roundCount:
+        typeof entry.roundCount === "number" && Number.isFinite(entry.roundCount) && entry.roundCount > 0
+          ? Math.floor(entry.roundCount)
+          : 0,
+      scope: "user",
+      removable: true,
+    }));
+
+  return {
+    hostSpotifyUserId,
+    playlists: [...baseEntries, ...userEntries],
+  };
+}
+
+export async function removeUserPlaylistBySelectionId(
+  rawSelectionId: string,
+  request: Request,
+  accessTokenOverride?: string,
+) {
+  const selection = parsePlaylistSelectionId(rawSelectionId);
+  if (!selection || selection.scope !== "user") {
+    throw new Error("Invalid user playlist selection.");
+  }
+
+  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(request, accessTokenOverride);
+  if (!hostSpotifyUserId) {
+    throw new Error("Missing Spotify user token. Connect Spotify in host setup and retry.");
+  }
+  if (selection.ownerSpotifyUserId !== hostSpotifyUserId) {
+    throw new Error("You can only remove playlists from your own Spotify user folder.");
+  }
+
+  const storage = getUserPlaylistStoragePaths(hostSpotifyUserId);
+  const existingCatalog = await readPlaylistCatalogFile(storage.indexPath);
+  const nextCatalog: PlaylistCatalogAsset = {
+    kind: "playlist-catalog",
+    playlists: existingCatalog.playlists.filter((entry) => entry.id !== selection.playlistId),
+  };
+  const removedFromCatalog = nextCatalog.playlists.length !== existingCatalog.playlists.length;
+
+  let removedFiles = 0;
+  try {
+    const escapedPackId = selection.playlistId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const versionPattern = new RegExp(`^${escapedPackId}\\.v(\\d+)\\.json$`, "u");
+    const fileNames = await readdir(storage.playlistsDir);
+    const targets = fileNames.filter((fileName) => versionPattern.test(fileName));
+    await Promise.all(
+      targets.map(async (fileName) => {
+        await rm(path.join(storage.playlistsDir, fileName), { force: true });
+      }),
+    );
+    removedFiles = targets.length;
+  } catch {
+    // Missing host folder means no pack files to remove.
+  }
+
+  if (!removedFromCatalog && removedFiles === 0) {
+    throw new Error("Playlist not found in your user catalog.");
+  }
+
+  await mkdir(storage.playlistsDir, { recursive: true });
+  await writeFile(storage.indexPath, `${JSON.stringify(nextCatalog, null, 2)}\n`, "utf8");
+
+  return {
+    playlistId: selection.playlistId,
+    removedFiles,
   };
 }

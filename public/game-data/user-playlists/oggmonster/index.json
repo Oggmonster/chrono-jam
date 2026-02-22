@@ -1,0 +1,15 @@
+{
+  "kind": "playlist-catalog",
+  "playlists": [
+    {
+      "id": "history-x",
+      "name": "music history x",
+      "version": 1,
+      "sourcePlaylistId": "668S35Hx0hP28ZfCplhAQA",
+      "sourcePlaylistName": "music history x",
+      "trackCount": 127,
+      "artistCount": 118,
+      "roundCount": 127
+    }
+  ]
+}

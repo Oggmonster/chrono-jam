@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/host-lobby";
-import { Link, useNavigate } from "react-router";
+import { Link, useFetcher, useNavigate } from "react-router";
 import { Check, CheckCheck, Copy, Music2, Play, Shield, Users, Wifi } from "lucide-react";
 
 import { CatMascot, GameCard, GameLayout, GameSubtitle, GameTitle } from "~/components/game/game-layout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import {
+  generateUserPlaylistPackFromPlaylist,
+  loadHostPlaylistCatalog,
+  removeUserPlaylistBySelectionId,
+} from "~/lib/admin-battery.server";
 import {
   clampGameSongCount,
   defaultGameSongCount,
@@ -17,7 +22,9 @@ import { useRoomState } from "~/lib/game-engine";
 import {
   readStoredSpotifyToken,
   resolveSpotifyAccessToken,
+  spotifyTokenKey,
 } from "~/lib/spotify-token";
+import { buildUserPlaylistSelectionId } from "~/lib/playlist-selection";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Host Lobby" }];
@@ -25,25 +32,177 @@ export function meta({}: Route.MetaArgs) {
 
 type PlaylistCatalogEntry = {
   id: string;
+  playlistId: string;
   name: string;
   version: number;
   roundCount: number;
+  scope: "base" | "user";
+  removable: boolean;
 };
 
-export default function HostLobby({ params }: Route.ComponentProps) {
+type HostLobbyActionResult =
+  | {
+      ok: true;
+      mode: "add-user-playlist";
+      message: string;
+      playlistSelectionId: string;
+    }
+  | {
+      ok: true;
+      mode: "remove-user-playlist";
+      message: string;
+      playlistSelectionId: string;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+function jsonResponse(payload: HostLobbyActionResult, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const catalog = await loadHostPlaylistCatalog(request);
+
+  return {
+    hostSpotifyUserId: catalog.hostSpotifyUserId,
+    playlistCatalog: catalog.playlists.map((entry) => ({
+      id: entry.selectionId,
+      playlistId: entry.playlistId,
+      name: entry.name,
+      version: entry.version,
+      roundCount: entry.roundCount,
+      scope: entry.scope,
+      removable: entry.removable,
+    })),
+  };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "").trim();
+  const browserSpotifyToken = String(formData.get("spotifyAccessToken") ?? "").trim();
+
+  if (intent === "add_user_playlist") {
+    const playlistPackId = String(formData.get("playlistPackId") ?? "").trim();
+    const playlist = String(formData.get("playlist") ?? "").trim();
+
+    if (!playlistPackId) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: "Pack ID is required.",
+        },
+        400,
+      );
+    }
+    if (!playlist) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: "Spotify playlist URL or ID is required.",
+        },
+        400,
+      );
+    }
+
+    try {
+      const generated = await generateUserPlaylistPackFromPlaylist(
+        playlistPackId,
+        playlist,
+        request,
+        browserSpotifyToken || undefined,
+      );
+      return jsonResponse({
+        ok: true,
+        mode: "add-user-playlist",
+        message: `Imported "${generated.playlistName}" as ${generated.playlistId} (v${generated.version}).`,
+        playlistSelectionId: buildUserPlaylistSelectionId(
+          generated.hostSpotifyUserId,
+          generated.playlistId,
+          generated.version,
+        ),
+      });
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: error instanceof Error ? error.message : "Playlist import failed.",
+        },
+        400,
+      );
+    }
+  }
+
+  if (intent === "remove_user_playlist") {
+    const playlistSelectionId = String(formData.get("playlistSelectionId") ?? "").trim();
+    if (!playlistSelectionId) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: "Playlist selection ID is required.",
+        },
+        400,
+      );
+    }
+
+    try {
+      const removed = await removeUserPlaylistBySelectionId(
+        playlistSelectionId,
+        request,
+        browserSpotifyToken || undefined,
+      );
+      return jsonResponse({
+        ok: true,
+        mode: "remove-user-playlist",
+        message: `Removed "${removed.playlistId}" (${removed.removedFiles} file${removed.removedFiles === 1 ? "" : "s"}).`,
+        playlistSelectionId,
+      });
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: error instanceof Error ? error.message : "Playlist removal failed.",
+        },
+        400,
+      );
+    }
+  }
+
+  return jsonResponse(
+    {
+      ok: false,
+      message: "Unknown action.",
+    },
+    400,
+  );
+}
+
+export default function HostLobby({ params, loaderData }: Route.ComponentProps) {
   const roomId = params.roomId;
   const navigate = useNavigate();
+  const playlistMutation = useFetcher<HostLobbyActionResult>();
   const room = useRoomState(roomId, "host");
   const finishedResetAppliedRef = useRef(false);
+  const handledRemovalRef = useRef("");
 
   const [spotifyTokenPresent, setSpotifyTokenPresent] = useState(false);
   const [spotifyTokenStatus, setSpotifyTokenStatus] = useState("");
+  const [browserSpotifyToken, setBrowserSpotifyToken] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const [playlistCatalog, setPlaylistCatalog] = useState<PlaylistCatalogEntry[]>([]);
+  const [playlistCatalog, setPlaylistCatalog] = useState<PlaylistCatalogEntry[]>(loaderData.playlistCatalog);
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
   const [requestedSongCount, setRequestedSongCount] = useState(defaultGameSongCount);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const mutationPending = playlistMutation.state !== "idle";
+  const mutationResult = playlistMutation.data ?? null;
 
   const readinessRows = useMemo(
     () =>
@@ -93,57 +252,14 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   ]);
 
   useEffect(() => {
-    let cancelled = false;
+    setPlaylistCatalog(loaderData.playlistCatalog);
+  }, [loaderData.playlistCatalog]);
 
-    const loadCatalog = async () => {
-      try {
-        const response = await fetch("/game-data/playlists/index.json", {
-          method: "GET",
-          credentials: "same-origin",
-          headers: { Accept: "application/json" },
-        });
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as {
-          kind?: string;
-          playlists?: Array<{ id?: string; name?: string; version?: number; roundCount?: number }>;
-        };
-        if (cancelled || payload.kind !== "playlist-catalog" || !Array.isArray(payload.playlists)) {
-          return;
-        }
-
-        const entries = payload.playlists
-          .filter(
-            (entry): entry is { id: string; name: string; version: number; roundCount?: number } =>
-              typeof entry?.id === "string" &&
-              entry.id.trim().length > 0 &&
-              typeof entry?.name === "string" &&
-              entry.name.trim().length > 0 &&
-              typeof entry?.version === "number" &&
-              Number.isFinite(entry.version),
-          )
-          .map((entry) => ({
-            id: entry.id.trim(),
-            name: entry.name.trim(),
-            version: Math.floor(entry.version),
-            roundCount:
-              typeof entry.roundCount === "number" && Number.isFinite(entry.roundCount) && entry.roundCount > 0
-                ? Math.floor(entry.roundCount)
-                : 0,
-          }));
-
-        setPlaylistCatalog(entries);
-      } catch {
-        // Keep defaults if catalog fetch fails.
-      }
-    };
-
-    void loadCatalog();
-    return () => {
-      cancelled = true;
-    };
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    setBrowserSpotifyToken(window.localStorage.getItem(spotifyTokenKey) ?? "");
   }, []);
 
   useEffect(() => {
@@ -170,13 +286,21 @@ export default function HostLobby({ params }: Route.ComponentProps) {
       .filter((playlistId) => !knownIds.has(playlistId))
       .map((playlistId) => ({
         id: playlistId,
+        playlistId,
         name: playlistId,
         version: 1,
         roundCount: defaultGameSongCount,
+        scope: "base" as const,
+        removable: false,
       }));
 
     return [...baseEntries, ...missingSelected];
   }, [playlistCatalog, selectedPlaylistIds]);
+
+  const userPlaylistEntries = useMemo(
+    () => playlistEntries.filter((entry) => entry.scope === "user" && entry.removable),
+    [playlistEntries],
+  );
 
   const normalizedSelectedPlaylistIds = useMemo(() => {
     const sanitized = [...new Set(selectedPlaylistIds.map((id) => id.trim()).filter((id) => id.length > 0))];
@@ -241,10 +365,14 @@ export default function HostLobby({ params }: Route.ComponentProps) {
   const checkTokenStatus = async () => {
     const stored = readStoredSpotifyToken();
     setSpotifyTokenPresent(Boolean(stored.accessToken));
+    if (stored.accessToken) {
+      setBrowserSpotifyToken(stored.accessToken);
+    }
 
     try {
       const resolved = await resolveSpotifyAccessToken();
       setSpotifyTokenPresent(true);
+      setBrowserSpotifyToken(resolved.accessToken);
       if (resolved.source === "refresh") {
         setSpotifyTokenStatus("Spotify token refreshed.");
       } else if (!stored.accessToken) {
@@ -253,6 +381,7 @@ export default function HostLobby({ params }: Route.ComponentProps) {
     } catch {
       const fallback = readStoredSpotifyToken();
       setSpotifyTokenPresent(Boolean(fallback.accessToken));
+      setBrowserSpotifyToken(fallback.accessToken);
       if (!fallback.accessToken) {
         setSpotifyTokenStatus("Spotify token missing. Reconnect Spotify.");
       }
@@ -269,6 +398,30 @@ export default function HostLobby({ params }: Route.ComponentProps) {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!mutationResult || !mutationResult.ok || mutationResult.mode !== "remove-user-playlist") {
+      return;
+    }
+
+    const removedSelectionId = mutationResult.playlistSelectionId;
+    if (handledRemovalRef.current === removedSelectionId) {
+      return;
+    }
+    handledRemovalRef.current = removedSelectionId;
+
+    setSelectedPlaylistIds((current) => {
+      if (!current.includes(removedSelectionId)) {
+        return current;
+      }
+      const next = current.filter((playlistId) => playlistId !== removedSelectionId);
+      if (next.length > 0) {
+        return next;
+      }
+      return playlistCatalog.length > 0 ? [playlistCatalog[0]!.id] : [];
+    });
+    setSettingsDirty(true);
+  }, [mutationResult, playlistCatalog]);
 
   const copyCode = async () => {
     try {
@@ -407,6 +560,85 @@ export default function HostLobby({ params }: Route.ComponentProps) {
               <p className="text-xs text-muted-foreground">
                 Using {selectedGameSongCount} songs (max {selectedRoundCapacity})
               </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 rounded-xl border border-border bg-muted/20 p-4 md:grid-cols-2">
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-card-foreground">Import Spotify Playlist</p>
+              <playlistMutation.Form method="post" className="grid gap-3">
+                <input type="hidden" name="intent" value="add_user_playlist" />
+                <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
+                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
+                  Pack ID
+                  <Input
+                    name="playlistPackId"
+                    placeholder="e.g. my-party-mix"
+                    required
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-card-foreground">
+                  Spotify playlist URL or ID
+                  <Input
+                    name="playlist"
+                    placeholder="https://open.spotify.com/playlist/..."
+                    required
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                  />
+                </label>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={!loaderData.hostSpotifyUserId || mutationPending}
+                >
+                  Import to My Playlists
+                </Button>
+              </playlistMutation.Form>
+              {!loaderData.hostSpotifyUserId ? (
+                <p className="text-xs text-muted-foreground">
+                  Connect Spotify in host setup first to import playlists tied to your Spotify user ID.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Connected Spotify user: <code>{loaderData.hostSpotifyUserId}</code>
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-card-foreground">My Imported Playlists</p>
+              {userPlaylistEntries.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No user playlists imported yet.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {userPlaylistEntries.map((entry) => (
+                    <div key={entry.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card p-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-card-foreground">{entry.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{entry.playlistId} ({entry.roundCount} songs)</p>
+                      </div>
+                      <playlistMutation.Form method="post">
+                        <input type="hidden" name="intent" value="remove_user_playlist" />
+                        <input type="hidden" name="playlistSelectionId" value={entry.id} />
+                        <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
+                        <Button type="submit" variant="outline" size="sm" disabled={mutationPending}>
+                          Remove
+                        </Button>
+                      </playlistMutation.Form>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {mutationResult ? (
+                <Badge variant={mutationResult.ok ? "success" : "warning"} className="w-fit">
+                  {mutationResult.message}
+                </Badge>
+              ) : null}
             </div>
           </div>
 
