@@ -651,16 +651,33 @@ function getUserPlaylistStoragePaths(spotifyUserId: string): PlaylistPackStorage
   };
 }
 
-async function resolveSpotifyUserIdFromRequest(accessTokenOverride?: string) {
+async function resolveSpotifyUserIdFromRequest(
+  accessTokenOverride?: string,
+  options: { requireProfile?: boolean } = {},
+) {
+  const { requireProfile = false } = options;
   const tokenCandidates = collectTokenCandidates(accessTokenOverride);
   if (tokenCandidates.length === 0) {
+    if (requireProfile) {
+      throw new Error("Missing Spotify access token. Reconnect Spotify in host lobby and retry.");
+    }
     return null;
   }
 
   try {
     const profile = await fetchCurrentUserProfile(tokenCandidates);
-    return normalizeSpotifyUserIdForStorage(profile.id) ?? null;
-  } catch {
+    const normalized = normalizeSpotifyUserIdForStorage(profile.id);
+    if (!normalized && requireProfile) {
+      throw new Error("Spotify user profile response did not include a valid user id.");
+    }
+    return normalized ?? null;
+  } catch (error) {
+    if (requireProfile) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error("Could not resolve Spotify user profile.");
+    }
     return null;
   }
 }
@@ -713,6 +730,7 @@ export async function generateUserPlaylistPackFromPlaylist(
 export async function loadHostPlaylistCatalog(
   request: Request,
   accessTokenOverride?: string,
+  options: { requireProfile?: boolean } = {},
 ): Promise<HostPlaylistCatalogResult> {
   const baseCatalog = await readPlaylistCatalogFile(basePlaylistIndexPath);
   const baseEntries: HostPlaylistCatalogEntry[] = baseCatalog.playlists
@@ -739,7 +757,7 @@ export async function loadHostPlaylistCatalog(
       removable: false,
     }));
 
-  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(accessTokenOverride);
+  const hostSpotifyUserId = await resolveSpotifyUserIdFromRequest(accessTokenOverride, options);
   if (!hostSpotifyUserId) {
     return {
       hostSpotifyUserId: null,

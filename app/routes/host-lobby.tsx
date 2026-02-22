@@ -114,7 +114,9 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     try {
-      const catalog = await loadHostPlaylistCatalog(request, browserSpotifyToken);
+      const catalog = await loadHostPlaylistCatalog(request, browserSpotifyToken, {
+        requireProfile: true,
+      });
       return jsonResponse({
         ok: true,
         mode: "load-catalog",
@@ -241,6 +243,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
 
   const [spotifyTokenPresent, setSpotifyTokenPresent] = useState(false);
   const [spotifyTokenStatus, setSpotifyTokenStatus] = useState("");
+  const [catalogError, setCatalogError] = useState("");
   const [browserSpotifyToken, setBrowserSpotifyToken] = useState("");
   const [tokenExpiresAt, setTokenExpiresAt] = useState(0);
   const [tokenCheckedAt, setTokenCheckedAt] = useState(Date.now());
@@ -285,6 +288,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
       setSpotifyTokenPresent(false);
       setBrowserSpotifyToken("");
       setTokenExpiresAt(0);
+      setCatalogError("");
       setSpotifyTokenStatus("Spotify token expired. Reconnect Spotify.");
       return;
     }
@@ -295,6 +299,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
 
     if (!preserveStatus) {
       if (status.missing) {
+        setCatalogError("");
         setSpotifyTokenStatus("Spotify token missing. Connect Spotify.");
       } else {
         setSpotifyTokenStatus("Spotify token ready.");
@@ -339,11 +344,6 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
   ]);
 
   useEffect(() => {
-    setPlaylistCatalog(loaderData.playlistCatalog);
-    setHostSpotifyUserId(loaderData.hostSpotifyUserId);
-  }, [loaderData.hostSpotifyUserId, loaderData.playlistCatalog]);
-
-  useEffect(() => {
     syncTokenState();
     const timer = window.setInterval(() => {
       syncTokenState();
@@ -372,12 +372,14 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
     const oauthError = searchParams.get("spotify_error");
 
     if (oauthError) {
+      setCatalogError("");
       setSpotifyTokenStatus(`Spotify auth error: ${oauthError}`);
     }
 
     if (oauthToken) {
       const parsedExpiry = Number(oauthExpiry);
       storeSpotifyToken(oauthToken, Number.isFinite(parsedExpiry) && parsedExpiry > 0 ? parsedExpiry : 60 * 60);
+      setCatalogError("");
       setSpotifyTokenStatus("Spotify connected. Access token saved.");
       lastCatalogTokenRef.current = "";
       syncTokenState(false);
@@ -399,6 +401,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
   useEffect(() => {
     if (!tokenValid || !browserSpotifyToken) {
       lastCatalogTokenRef.current = "";
+      setCatalogError("");
       return;
     }
 
@@ -423,6 +426,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
     }
 
     if (!catalogResult.ok) {
+      setCatalogError(catalogResult.message);
       setSpotifyTokenStatus(catalogResult.message);
       return;
     }
@@ -431,6 +435,7 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
       return;
     }
 
+    setCatalogError("");
     setHostSpotifyUserId(catalogResult.hostSpotifyUserId);
     setPlaylistCatalog(catalogResult.playlistCatalog);
   }, [catalogMutation.data]);
@@ -720,15 +725,40 @@ export default function HostLobby({ params, loaderData }: Route.ComponentProps) 
                     <Button
                       type="submit"
                       variant="outline"
-                      disabled={!tokenValid || !hostSpotifyUserId || mutationPending}
+                      disabled={!tokenValid || mutationPending}
                     >
                       Import to My Playlists
                     </Button>
                   </playlistMutation.Form>
-                  {!hostSpotifyUserId ? (
+                  {!tokenValid ? (
                     <p className="text-xs text-muted-foreground">
-                      Connect Spotify first to load playlists tied to your Spotify user ID.
+                      Connect Spotify first to import playlists tied to your Spotify user ID.
                     </p>
+                  ) : !hostSpotifyUserId ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          Spotify token is present, but user profile could not be resolved.
+                        </p>
+                        <catalogMutation.Form method="post">
+                          <input type="hidden" name="intent" value="load_catalog" />
+                          <input type="hidden" name="spotifyAccessToken" value={browserSpotifyToken} />
+                          <Button type="submit" variant="outline" size="sm" disabled={catalogMutation.state !== "idle"}>
+                            Retry
+                          </Button>
+                        </catalogMutation.Form>
+                      </div>
+                      {catalogMutation.state !== "idle" ? (
+                        <Badge variant="default" className="w-fit">
+                          Resolving Spotify profile...
+                        </Badge>
+                      ) : null}
+                      {catalogError ? (
+                        <Badge variant="warning" className="w-fit">
+                          {catalogError}
+                        </Badge>
+                      ) : null}
+                    </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Connected Spotify user: <code>{hostSpotifyUserId}</code>
