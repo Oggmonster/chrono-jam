@@ -10,6 +10,16 @@
       "roundCount": 5
     },
     {
+      "id": "ebba-quiz",
+      "name": "Ebbis quiz spelista",
+      "version": 1,
+      "sourcePlaylistId": "43a8JuTpeuR1EmANXNEDWn",
+      "sourcePlaylistName": "Ebbis quiz spelista",
+      "trackCount": 70,
+      "artistCount": 73,
+      "roundCount": 70
+    },
+    {
       "id": "ebbas-spellista",
       "name": "Ebbas spellista ",
       "version": 1,
