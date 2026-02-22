@@ -239,7 +239,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
     const runInitialization = async () => {
       const trimmedToken = tokenRef.current.trim();
       if (!trimmedToken) {
-        const message = "Missing Spotify access token. Add it in host setup first.";
+        const message = "Missing Spotify access token. Reconnect Spotify from the host lobby first.";
         setError(message);
         logDebug("initialize: missing access token.");
         return false;
@@ -463,7 +463,7 @@ export function useSpotifyHostPlayer(accessToken: string): SpotifyHookResult {
                   continue;
                 }
 
-          const message = "Could not connect Spotify player. Use Refresh Token in host controls, then retry Init SDK.";
+          const message = "Could not connect Spotify player. Reconnect Spotify from host lobby, then retry Init SDK.";
           setError(message);
           logDebug("initialize: player.connect() returned false.");
           return false;

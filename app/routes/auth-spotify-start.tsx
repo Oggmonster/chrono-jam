@@ -3,10 +3,12 @@ import type { Route } from "./+types/auth-spotify-start";
 
 import {
   buildStateCookie,
+  clearStateCookie,
   getSpotifyClientId,
   getSpotifyRedirectUri,
   getSpotifyScopeParam,
   randomState,
+  spotifyHostRoomCookieName,
   spotifyStateCookieName,
 } from "~/lib/spotify-oauth.server";
 
@@ -16,7 +18,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   try {
     clientId = getSpotifyClientId();
   } catch {
-    return redirect("/host/setup?spotify_error=Missing%20SPOTIFY_CLIENT_ID");
+    const requestUrl = new URL(request.url);
+    const room = requestUrl.searchParams.get("room") ?? "";
+    const fallbackTarget = room ? `/host/lobby/${encodeURIComponent(room)}` : "/host/lobby";
+    return redirect(`${fallbackTarget}?spotify_error=Missing%20SPOTIFY_CLIENT_ID`);
   }
 
   const requestUrl = new URL(request.url);
@@ -42,11 +47,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     authorizeUrl.searchParams.set("songs", songs);
   }
 
-  return redirect(authorizeUrl.toString(), {
-    headers: {
-      "Set-Cookie": buildStateCookie(spotifyStateCookieName, state, request),
-    },
-  });
+  const headers = new Headers();
+  headers.append("Set-Cookie", buildStateCookie(spotifyStateCookieName, state, request));
+  if (room) {
+    headers.append("Set-Cookie", buildStateCookie(spotifyHostRoomCookieName, encodeURIComponent(room), request));
+  } else {
+    headers.append("Set-Cookie", clearStateCookie(spotifyHostRoomCookieName, request));
+  }
+
+  return redirect(authorizeUrl.toString(), { headers });
 }
 
 export default function AuthSpotifyStart() {
