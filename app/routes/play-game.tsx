@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type RefObject, type SetStateAction } from "react";
 import type { Route } from "./+types/play-game";
 import { Link } from "react-router";
 import { CheckCircle2, Crown, Home, Music, Quote, Star, TrendingUp, Trophy, XCircle } from "lucide-react";
@@ -23,6 +23,13 @@ import { getPlayerSession, type PlayerSession } from "~/lib/player-session";
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Game" }];
 }
+
+type PendingGuess = {
+  trackId: string;
+  artistId: string;
+};
+
+type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
 export default function PlayGame({ params }: Route.ComponentProps) {
   const roomId = params.roomId;
@@ -72,6 +79,9 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const [artistInputFocused, setArtistInputFocused] = useState(false);
   const [trackActiveSuggestionIndex, setTrackActiveSuggestionIndex] = useState(-1);
   const [artistActiveSuggestionIndex, setArtistActiveSuggestionIndex] = useState(-1);
+  const [pendingGuess, setPendingGuess] = useState<PendingGuess | null>(null);
+  const trackInputRef = useRef<HTMLInputElement | null>(null);
+  const artistInputRef = useRef<HTMLInputElement | null>(null);
   const revealCardRef = useRef<HTMLDivElement | null>(null);
   const [finalRevealReady, setFinalRevealReady] = useState(false);
 
@@ -95,6 +105,13 @@ export default function PlayGame({ params }: Route.ComponentProps) {
 
   const submissionKey = playerSession ? `${playerSession.id}:${room.round.id}` : "";
   const currentSubmission = submissionKey ? room.state.guessSubmissions[submissionKey] : undefined;
+  const currentSubmissionTrackId = currentSubmission?.trackId ?? "";
+  const currentSubmissionArtistId = currentSubmission?.artistId ?? "";
+  const savedTrackId = selectedTrack?.id ?? currentSubmissionTrackId;
+  const savedArtistId = selectedArtist?.id ?? currentSubmissionArtistId;
+  const pendingGuessOutOfSync =
+    pendingGuess !== null &&
+    (pendingGuess.trackId !== currentSubmissionTrackId || pendingGuess.artistId !== currentSubmissionArtistId);
   const playerEligible = playerSession ? room.state.allowedPlayerIds.includes(playerSession.id) : false;
   const canEditGuess =
     room.state.lifecycle === "running" && room.state.phase === "LISTEN" && Boolean(playerSession) && playerEligible;
@@ -135,6 +152,159 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const isArtistAutocompleteOpen =
     canEditGuess && artistInputFocused && !selectedArtist && artistQuery.trim().length >= 2;
 
+  const closeAutocomplete = (
+    setFocused: StateSetter<boolean>,
+    setActiveSuggestionIndex: StateSetter<number>,
+  ) => {
+    setFocused(false);
+    setActiveSuggestionIndex(-1);
+  };
+
+  const focusAutocomplete = (
+    setFocused: StateSetter<boolean>,
+    setActiveSuggestionIndex: StateSetter<number>,
+  ) => {
+    setFocused(true);
+    setActiveSuggestionIndex(0);
+  };
+
+  const resetGuessInputs = () => {
+    setTrackQuery("");
+    setArtistQuery("");
+    setSelectedTrack(null);
+    setSelectedArtist(null);
+    setPendingGuess(null);
+    closeAutocomplete(setTrackInputFocused, setTrackActiveSuggestionIndex);
+    closeAutocomplete(setArtistInputFocused, setArtistActiveSuggestionIndex);
+  };
+
+  const handleGuessInputChange = ({
+    nextValue,
+    hasSavedGuess,
+    setQuery,
+    setSelected,
+    setActiveSuggestionIndex,
+    clearGuess,
+  }: {
+    nextValue: string;
+    hasSavedGuess: boolean;
+    setQuery: StateSetter<string>;
+    setSelected: StateSetter<AutocompleteItem | null>;
+    setActiveSuggestionIndex: StateSetter<number>;
+    clearGuess: () => void;
+  }) => {
+    setQuery(nextValue);
+    setSelected(null);
+    setActiveSuggestionIndex(0);
+
+    if (hasSavedGuess) {
+      clearGuess();
+    }
+  };
+
+  const handleGuessInputBlur = (
+    setFocused: StateSetter<boolean>,
+    setActiveSuggestionIndex: StateSetter<number>,
+  ) => {
+    window.setTimeout(() => {
+      closeAutocomplete(setFocused, setActiveSuggestionIndex);
+    }, 120);
+  };
+
+  const handleSuggestionKeyDown = ({
+    event,
+    isOpen,
+    suggestions,
+    activeSuggestionIndex,
+    setActiveSuggestionIndex,
+    closeSuggestions,
+    onSelect,
+  }: {
+    event: KeyboardEvent<HTMLInputElement>;
+    isOpen: boolean;
+    suggestions: AutocompleteItem[];
+    activeSuggestionIndex: number;
+    setActiveSuggestionIndex: StateSetter<number>;
+    closeSuggestions: () => void;
+    onSelect: (suggestion: AutocompleteItem) => void;
+  }) => {
+    if (!isOpen || suggestions.length === 0) {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSuggestionIndex((current) => (current < 0 ? 0 : (current + 1) % suggestions.length));
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSuggestionIndex((current) =>
+        current < 0 ? suggestions.length - 1 : (current - 1 + suggestions.length) % suggestions.length,
+      );
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const selectedIndex = activeSuggestionIndex >= 0 ? activeSuggestionIndex : 0;
+      const suggestion = suggestions[selectedIndex];
+      if (suggestion) {
+        onSelect(suggestion);
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSuggestions();
+    }
+  };
+
+  const selectGuessSuggestion = ({
+    suggestion,
+    setSelected,
+    setQuery,
+    closeSuggestions,
+    trackId,
+    artistId,
+  }: {
+    suggestion: AutocompleteItem;
+    setSelected: StateSetter<AutocompleteItem | null>;
+    setQuery: StateSetter<string>;
+    closeSuggestions: () => void;
+    trackId: string;
+    artistId: string;
+  }) => {
+    setSelected(suggestion);
+    setQuery(suggestion.display);
+    closeSuggestions();
+    syncGuess(trackId, artistId);
+  };
+
+  const clearGuessField = ({
+    setSelected,
+    setQuery,
+    focusSuggestions,
+    inputRef,
+    trackId,
+    artistId,
+  }: {
+    setSelected: StateSetter<AutocompleteItem | null>;
+    setQuery: StateSetter<string>;
+    focusSuggestions: () => void;
+    inputRef: RefObject<HTMLInputElement | null>;
+    trackId: string;
+    artistId: string;
+  }) => {
+    setSelected(null);
+    setQuery("");
+    focusSuggestions();
+    inputRef.current?.focus();
+    syncGuess(trackId, artistId);
+  };
+
   useEffect(() => {
     setPlayerSession(getPlayerSession(roomId));
   }, [roomId]);
@@ -172,14 +342,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   }, [playlistIdsForLoad, roomId]);
 
   useEffect(() => {
-    setTrackQuery("");
-    setArtistQuery("");
-    setSelectedTrack(null);
-    setSelectedArtist(null);
-    setTrackInputFocused(false);
-    setArtistInputFocused(false);
-    setTrackActiveSuggestionIndex(-1);
-    setArtistActiveSuggestionIndex(-1);
+    resetGuessInputs();
   }, [room.round.id]);
 
   useEffect(() => {
@@ -187,23 +350,16 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    setTrackQuery("");
-    setArtistQuery("");
-    setSelectedTrack(null);
-    setSelectedArtist(null);
-    setTrackInputFocused(false);
-    setArtistInputFocused(false);
-    setTrackActiveSuggestionIndex(-1);
-    setArtistActiveSuggestionIndex(-1);
+    resetGuessInputs();
   }, [room.state.phase]);
 
   useEffect(() => {
-    if (room.state.phase === "INTERMISSION") {
+    if (room.state.phase === "INTERMISSION" || pendingGuessOutOfSync) {
       return;
     }
 
-    const nextTrackId = currentSubmission?.trackId ?? "";
-    const nextArtistId = currentSubmission?.artistId ?? "";
+    const nextTrackId = currentSubmissionTrackId;
+    const nextArtistId = currentSubmissionArtistId;
     const nextTrack = nextTrackId ? trackLookup[nextTrackId] : undefined;
     const nextArtist = nextArtistId ? artistLookup[nextArtistId] : undefined;
 
@@ -227,13 +383,28 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       }
     }
   }, [
+    currentSubmissionArtistId,
+    currentSubmissionTrackId,
+    pendingGuessOutOfSync,
     artistInputFocused,
     artistLookup,
-    currentSubmission,
     room.state.phase,
     trackInputFocused,
     trackLookup,
   ]);
+
+  useEffect(() => {
+    if (!pendingGuess) {
+      return;
+    }
+
+    if (
+      pendingGuess.trackId === currentSubmissionTrackId &&
+      pendingGuess.artistId === currentSubmissionArtistId
+    ) {
+      setPendingGuess(null);
+    }
+  }, [currentSubmissionArtistId, currentSubmissionTrackId, pendingGuess]);
 
   useEffect(() => {
     if (!revealOpen || intermissionOpen) {
@@ -289,6 +460,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       return;
     }
 
+    setPendingGuess({ trackId, artistId });
     room.controls.submitGuess({
       playerId: playerSession.id,
       roundId: room.round.id,
@@ -297,32 +469,64 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     });
   };
 
+  const closeTrackAutocomplete = () => {
+    closeAutocomplete(setTrackInputFocused, setTrackActiveSuggestionIndex);
+  };
+
+  const closeArtistAutocomplete = () => {
+    closeAutocomplete(setArtistInputFocused, setArtistActiveSuggestionIndex);
+  };
+
+  const focusTrackAutocomplete = () => {
+    focusAutocomplete(setTrackInputFocused, setTrackActiveSuggestionIndex);
+  };
+
+  const focusArtistAutocomplete = () => {
+    focusAutocomplete(setArtistInputFocused, setArtistActiveSuggestionIndex);
+  };
+
   const selectTrackSuggestion = (suggestion: AutocompleteItem) => {
-    setSelectedTrack(suggestion);
-    setTrackQuery(suggestion.display);
-    setTrackInputFocused(false);
-    setTrackActiveSuggestionIndex(-1);
-    syncGuess(suggestion.id, selectedArtist?.id ?? currentSubmission?.artistId ?? "");
+    selectGuessSuggestion({
+      suggestion,
+      setSelected: setSelectedTrack,
+      setQuery: setTrackQuery,
+      closeSuggestions: closeTrackAutocomplete,
+      trackId: suggestion.id,
+      artistId: savedArtistId,
+    });
   };
 
   const selectArtistSuggestion = (suggestion: AutocompleteItem) => {
-    setSelectedArtist(suggestion);
-    setArtistQuery(suggestion.display);
-    setArtistInputFocused(false);
-    setArtistActiveSuggestionIndex(-1);
-    syncGuess(selectedTrack?.id ?? currentSubmission?.trackId ?? "", suggestion.id);
+    selectGuessSuggestion({
+      suggestion,
+      setSelected: setSelectedArtist,
+      setQuery: setArtistQuery,
+      closeSuggestions: closeArtistAutocomplete,
+      trackId: savedTrackId,
+      artistId: suggestion.id,
+    });
   };
 
-  const clearGuesses = () => {
-    setSelectedTrack(null);
-    setTrackQuery("");
-    setTrackInputFocused(false);
-    setTrackActiveSuggestionIndex(-1);
-    setSelectedArtist(null);
-    setArtistQuery("");
-    setArtistInputFocused(false);
-    setArtistActiveSuggestionIndex(-1);
-    syncGuess("", "");
+  const clearTrackGuess = () => {
+    clearGuessField({
+      setSelected: setSelectedTrack,
+      setQuery: setTrackQuery,
+      focusSuggestions: focusTrackAutocomplete,
+      inputRef: trackInputRef,
+      trackId: "",
+      artistId: savedArtistId,
+    });
+  };
+
+  const clearArtistGuess = () => {
+    clearGuessField({
+      setSelected: setSelectedArtist,
+      setQuery: setArtistQuery,
+      focusSuggestions: focusArtistAutocomplete,
+      inputRef: artistInputRef,
+      trackId: savedTrackId,
+      artistId: "",
+    });
   };
 
   const trackCorrect = currentSubmission?.trackId === room.round.trackId;
@@ -684,72 +888,38 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 <div className="relative z-20 focus-within:z-50">
                   <Input
                     id="track-guess-input"
+                    ref={trackInputRef}
                     placeholder="Type at least 2 chars"
-                    className={`h-11 border-2 text-card-foreground placeholder:text-muted-foreground transition-colors ${
+                    className={`h-11 pr-10 border-2 text-card-foreground placeholder:text-muted-foreground transition-colors ${
                       selectedTrack
                         ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)] ring-2 ring-[hsl(var(--primary)/0.15)]"
                         : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)]"
                     }`}
                     value={displayedTrackQuery}
                     onChange={(event) => {
-                      const nextValue = event.target.value;
-                      const shouldClearTrackGuess = Boolean(selectedTrack || currentSubmission?.trackId);
-                      setTrackQuery(nextValue);
-                      setSelectedTrack(null);
-                      setTrackActiveSuggestionIndex(0);
-                      if (shouldClearTrackGuess) {
-                        syncGuess("", selectedArtist?.id ?? currentSubmission?.artistId ?? "");
-                      }
+                      handleGuessInputChange({
+                        nextValue: event.target.value,
+                        hasSavedGuess: Boolean(selectedTrack || currentSubmissionTrackId),
+                        setQuery: setTrackQuery,
+                        setSelected: setSelectedTrack,
+                        setActiveSuggestionIndex: setTrackActiveSuggestionIndex,
+                        clearGuess: () => syncGuess("", savedArtistId),
+                      });
                     }}
-                    onFocus={() => {
-                      setTrackInputFocused(true);
-                      setTrackActiveSuggestionIndex(0);
-                    }}
+                    onFocus={focusTrackAutocomplete}
                     onBlur={() => {
-                      window.setTimeout(() => {
-                        setTrackInputFocused(false);
-                        setTrackActiveSuggestionIndex(-1);
-                      }, 120);
+                      handleGuessInputBlur(setTrackInputFocused, setTrackActiveSuggestionIndex);
                     }}
                     onKeyDown={(event) => {
-                      if (!isTrackAutocompleteOpen || trackSuggestions.length === 0) {
-                        return;
-                      }
-
-                      if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        setTrackActiveSuggestionIndex((current) =>
-                          current < 0 ? 0 : (current + 1) % trackSuggestions.length,
-                        );
-                        return;
-                      }
-
-                      if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        setTrackActiveSuggestionIndex((current) =>
-                          current < 0
-                            ? trackSuggestions.length - 1
-                            : (current - 1 + trackSuggestions.length) % trackSuggestions.length,
-                        );
-                        return;
-                      }
-
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        const selectedIndex =
-                          trackActiveSuggestionIndex >= 0 ? trackActiveSuggestionIndex : 0;
-                        const suggestion = trackSuggestions[selectedIndex];
-                        if (suggestion) {
-                          selectTrackSuggestion(suggestion);
-                        }
-                        return;
-                      }
-
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setTrackInputFocused(false);
-                        setTrackActiveSuggestionIndex(-1);
-                      }
+                      handleSuggestionKeyDown({
+                        event,
+                        isOpen: isTrackAutocompleteOpen,
+                        suggestions: trackSuggestions,
+                        activeSuggestionIndex: trackActiveSuggestionIndex,
+                        setActiveSuggestionIndex: setTrackActiveSuggestionIndex,
+                        closeSuggestions: closeTrackAutocomplete,
+                        onSelect: selectTrackSuggestion,
+                      });
                     }}
                     autoComplete="off"
                     autoCorrect="off"
@@ -766,6 +936,19 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     }
                     disabled={!canEditGuess}
                   />
+                  {canEditGuess && displayedTrackQuery.length > 0 ? (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[hsl(var(--muted)/0.8)] hover:text-card-foreground"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={clearTrackGuess}
+                      aria-label="Clear song title"
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </button>
+                  ) : null}
                   {isTrackAutocompleteOpen ? (
                     <ul
                       id="track-guess-listbox"
@@ -809,7 +992,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 </div>
                 <p className="min-h-4 text-xs font-semibold text-muted-foreground">
                   {selectedTrack && !intermissionOpen
-                    ? `Selected and counting: ${selectedTrack.display}`
+                    ? `Selected title: ${selectedTrack.display}`
                     : displayedTrackQuery.trim().length >= 2
                       ? "Pick one suggestion to make this count."
                       : "Type and choose from the list."}
@@ -820,72 +1003,38 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 <div className="relative z-20 focus-within:z-50">
                   <Input
                     id="artist-guess-input"
+                    ref={artistInputRef}
                     placeholder="Type at least 2 chars"
-                    className={`h-11 border-2 text-card-foreground placeholder:text-muted-foreground transition-colors ${
+                    className={`h-11 pr-10 border-2 text-card-foreground placeholder:text-muted-foreground transition-colors ${
                       selectedArtist
                         ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)] ring-2 ring-[hsl(var(--primary)/0.15)]"
                         : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)]"
                     }`}
                     value={displayedArtistQuery}
                     onChange={(event) => {
-                      const nextValue = event.target.value;
-                      const shouldClearArtistGuess = Boolean(selectedArtist || currentSubmission?.artistId);
-                      setArtistQuery(nextValue);
-                      setSelectedArtist(null);
-                      setArtistActiveSuggestionIndex(0);
-                      if (shouldClearArtistGuess) {
-                        syncGuess(selectedTrack?.id ?? currentSubmission?.trackId ?? "", "");
-                      }
+                      handleGuessInputChange({
+                        nextValue: event.target.value,
+                        hasSavedGuess: Boolean(selectedArtist || currentSubmissionArtistId),
+                        setQuery: setArtistQuery,
+                        setSelected: setSelectedArtist,
+                        setActiveSuggestionIndex: setArtistActiveSuggestionIndex,
+                        clearGuess: () => syncGuess(savedTrackId, ""),
+                      });
                     }}
-                    onFocus={() => {
-                      setArtistInputFocused(true);
-                      setArtistActiveSuggestionIndex(0);
-                    }}
+                    onFocus={focusArtistAutocomplete}
                     onBlur={() => {
-                      window.setTimeout(() => {
-                        setArtistInputFocused(false);
-                        setArtistActiveSuggestionIndex(-1);
-                      }, 120);
+                      handleGuessInputBlur(setArtistInputFocused, setArtistActiveSuggestionIndex);
                     }}
                     onKeyDown={(event) => {
-                      if (!isArtistAutocompleteOpen || artistSuggestions.length === 0) {
-                        return;
-                      }
-
-                      if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        setArtistActiveSuggestionIndex((current) =>
-                          current < 0 ? 0 : (current + 1) % artistSuggestions.length,
-                        );
-                        return;
-                      }
-
-                      if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        setArtistActiveSuggestionIndex((current) =>
-                          current < 0
-                            ? artistSuggestions.length - 1
-                            : (current - 1 + artistSuggestions.length) % artistSuggestions.length,
-                        );
-                        return;
-                      }
-
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        const selectedIndex =
-                          artistActiveSuggestionIndex >= 0 ? artistActiveSuggestionIndex : 0;
-                        const suggestion = artistSuggestions[selectedIndex];
-                        if (suggestion) {
-                          selectArtistSuggestion(suggestion);
-                        }
-                        return;
-                      }
-
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setArtistInputFocused(false);
-                        setArtistActiveSuggestionIndex(-1);
-                      }
+                      handleSuggestionKeyDown({
+                        event,
+                        isOpen: isArtistAutocompleteOpen,
+                        suggestions: artistSuggestions,
+                        activeSuggestionIndex: artistActiveSuggestionIndex,
+                        setActiveSuggestionIndex: setArtistActiveSuggestionIndex,
+                        closeSuggestions: closeArtistAutocomplete,
+                        onSelect: selectArtistSuggestion,
+                      });
                     }}
                     autoComplete="off"
                     autoCorrect="off"
@@ -902,6 +1051,19 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                     }
                     disabled={!canEditGuess}
                   />
+                  {canEditGuess && displayedArtistQuery.length > 0 ? (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[hsl(var(--muted)/0.8)] hover:text-card-foreground"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={clearArtistGuess}
+                      aria-label="Clear artist"
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </button>
+                  ) : null}
                   {isArtistAutocompleteOpen ? (
                     <ul
                       id="artist-guess-listbox"
@@ -945,7 +1107,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 </div>
                 <p className="min-h-4 text-xs font-semibold text-muted-foreground">
                   {selectedArtist && !intermissionOpen
-                    ? `Selected and counting: ${selectedArtist.display}`
+                    ? `Selected artist: ${selectedArtist.display}`
                     : displayedArtistQuery.trim().length >= 2
                       ? "Pick one suggestion to make this count."
                       : "Type and choose from the list."}
@@ -953,16 +1115,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                className="h-10 border-[hsl(var(--input))] bg-card text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
-                onClick={clearGuesses}
-                disabled={!canEditGuess}
-              >
-                Clear
-              </Button>
-              <Badge variant="default">1 point title + 1 point artist</Badge>
+            <div className="flex flex-wrap items-center gap-2">              
               {guessPending ? <Badge variant="warning">Waiting for your selections</Badge> : null}
               {hasTrackGuess ? <Badge variant="success">Title saved</Badge> : null}
               {hasArtistGuess ? <Badge variant="success">Artist saved</Badge> : null}
