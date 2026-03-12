@@ -1,0 +1,956 @@
+{
+  "kind": "playlist-pack",
+  "playlistId": "quizy",
+  "version": 1,
+  "tracks": [
+    {
+      "id": "3JfkNCiXjHEVkbFfCQ417E",
+      "display": "Erase / Rewind"
+    },
+    {
+      "id": "0Ui05Ov0s4PnRc4JI3Pilg",
+      "display": "My Favourite Game"
+    },
+    {
+      "id": "7aQjPecQdIuNd1sz3KCDhD",
+      "display": "Lovefool"
+    },
+    {
+      "id": "0gEyKnHvgkrkBM6fbeHdwK",
+      "display": "Linger"
+    },
+    {
+      "id": "4JGKZS7h4Qa16gOU3oNETV",
+      "display": "Dreams"
+    },
+    {
+      "id": "754kgU5rWscRTfvlsuEwFp",
+      "display": "Kiss Me"
+    },
+    {
+      "id": "4aEpgQyr33rftQ0M7fHewP",
+      "display": "Return of the Mack"
+    },
+    {
+      "id": "21vYQVmxvNZJ1yf0cjQ8uC",
+      "display": "Never Ever"
+    },
+    {
+      "id": "3o89yqIMUsFWN3BcEZIQPD",
+      "display": "Hand in My Pocket"
+    },
+    {
+      "id": "0kV0hSRYRN4oZCpYpejF4z",
+      "display": "Iris"
+    },
+    {
+      "id": "6SHoe9CicShSDvFBsuH72k",
+      "display": "In the Meantime"
+    },
+    {
+      "id": "4m822CKvZFkLBzXEJNOAzf",
+      "display": "Mulder and Scully"
+    },
+    {
+      "id": "4sqfVCAoB2srnSxRMXjYxq",
+      "display": "Easy"
+    },
+    {
+      "id": "4DCdDUYGmZp2Vk6f2hMjdB",
+      "display": "Stars"
+    },
+    {
+      "id": "6ZLkYMInIvcqPotBLAg1hF",
+      "display": "I Love You Always Forever"
+    },
+    {
+      "id": "1ov8ue3eRq5tPDENGGG3gi",
+      "display": "Groove Is in the Heart"
+    },
+    {
+      "id": "51wLKDUGOgtroy77KmUjGZ",
+      "display": "Sexy Boy"
+    },
+    {
+      "id": "0hDQV9X1Da5JrwhK8gu86p",
+      "display": "Maps"
+    },
+    {
+      "id": "7c5lMuvtz2gddhDyG5MjB6",
+      "display": "The Final Countdown"
+    },
+    {
+      "id": "0xs0ewnEb6c2DlY7LjOD7t",
+      "display": "Girls Just Wanna Have Fun"
+    },
+    {
+      "id": "1gb5sUe1CuRBuT8twq8uhw",
+      "display": "Walk Like an Egyptian"
+    },
+    {
+      "id": "3HRQtRUYnnuZY7fE900XtJ",
+      "display": "Don't Stop Believin'"
+    },
+    {
+      "id": "7q3MflmodGZlOgZ799EpAb",
+      "display": "Total Eclipse of the Heart"
+    },
+    {
+      "id": "5HIDIRwU38XVBozdoQwCml",
+      "display": "Can You Feel It"
+    },
+    {
+      "id": "3wyM8rkowHQQrnTa32DsUJ",
+      "display": "You Got It (The Right Stuff)"
+    },
+    {
+      "id": "3PUrao7xB9jYq31eKVjrV6",
+      "display": "9 to 5"
+    },
+    {
+      "id": "3DELXBOaCxwyLBr3s5AAlN",
+      "display": "Fools Gold"
+    },
+    {
+      "id": "1tDH02wIa3ysGiAe4qsLXL",
+      "display": "Rock Me Amadeus"
+    },
+    {
+      "id": "53NWOfQXdEmbHqg5FGeXlG",
+      "display": "I'm So Excited"
+    },
+    {
+      "id": "7fZL8llLPKGqOYOJoDuHOs",
+      "display": "I Can't Go for That (No Can Do)"
+    },
+    {
+      "id": "4A5VaeDFaX7XKV0JnsRSxw",
+      "display": "Broken Wings"
+    },
+    {
+      "id": "6weQnAmZRMyiMrZsyrhfYn",
+      "display": "You're the Voice"
+    },
+    {
+      "id": "3KF7itkrBxHgqJfyc506Al",
+      "display": "99 Red Balloons"
+    },
+    {
+      "id": "5BoG24ogLB4Wi4Z8McYCXJ",
+      "display": "Loco in Acapulco"
+    },
+    {
+      "id": "0kHZKGxLrFXPbmYnq9xFBs",
+      "display": "Hon har ett sätt"
+    },
+    {
+      "id": "27AEB295EYfQ6Y2FRKllRp",
+      "display": "Dansa din Djävul"
+    },
+    {
+      "id": "3TWsKfuu2QgnEg8a9T7SJS",
+      "display": "Tusen dagar härifrån"
+    },
+    {
+      "id": "78jk64ySQjFPHrs0lxpvhi",
+      "display": "Den som ser havet"
+    },
+    {
+      "id": "22Lvddb70mRuhSWAXgorOJ",
+      "display": "Moln på marken"
+    },
+    {
+      "id": "5hEaIMas1ZQT26ONK8CJch",
+      "display": "Det du vill ha"
+    },
+    {
+      "id": "1GuVDjwsSrZ43mb4S72klT",
+      "display": "Våran sort"
+    },
+    {
+      "id": "2cGlzTR9gC93lc12cZ8afB",
+      "display": "80's"
+    },
+    {
+      "id": "0to0P21sSRwBPR6bakIExy",
+      "display": "Roland"
+    },
+    {
+      "id": "1UIqhGrSbjT61tIMJ8JUbW",
+      "display": "Helgen v. 48"
+    },
+    {
+      "id": "3KPZph4AQ5eiCKqFjgExcA",
+      "display": "Stor på jorden"
+    },
+    {
+      "id": "0Hz0ySp6XYrBhEQPU16Hz8",
+      "display": "Valborg"
+    },
+    {
+      "id": "3dHuioB3G88EKsiP8otWdn",
+      "display": "Man måste dö några gånger innan man kan leva"
+    },
+    {
+      "id": "0FkloQbDAl1xjM1UC2jBIN",
+      "display": "En vän med en bil"
+    },
+    {
+      "id": "5YCKObb1A7YIeOKzXhREwz",
+      "display": "Pärlor"
+    },
+    {
+      "id": "1neOfnHiC6ZQU3Cyy5Nf0j",
+      "display": "747"
+    },
+    {
+      "id": "0kNN4E7Ai5u5JprxgLJH3R",
+      "display": "Musik Non Stop"
+    }
+  ],
+  "artists": [
+    {
+      "id": "1tqZaCwM57UFKjWoYwMLrw",
+      "display": "The Cardigans"
+    },
+    {
+      "id": "7t0rwkOPGlDPEhaOcVtOt9",
+      "display": "The Cranberries"
+    },
+    {
+      "id": "0lJlKQvuM2Sd9DPPyUXcHg",
+      "display": "Sixpence None The Richer"
+    },
+    {
+      "id": "6V3F8MZrOKdT9fU686ybE9",
+      "display": "Mark Morrison"
+    },
+    {
+      "id": "5TDVKqW9uhqGjwwwKGuma4",
+      "display": "All Saints"
+    },
+    {
+      "id": "6ogn9necmbUdCppmNnGOdi",
+      "display": "Alanis Morissette"
+    },
+    {
+      "id": "2sil8z5kiy4r76CRTXxBCA",
+      "display": "The Goo Goo Dolls"
+    },
+    {
+      "id": "3NZE8jDD2cCzd4vUyZ5CQQ",
+      "display": "Spacehog"
+    },
+    {
+      "id": "4Bgfzia8wyaGaTn42egzTv",
+      "display": "Catatonia"
+    },
+    {
+      "id": "6GbCJZrI318Ybm8mY36Of5",
+      "display": "Faith No More"
+    },
+    {
+      "id": "1fa0cOhromAZdq2xRA4vv8",
+      "display": "Simply Red"
+    },
+    {
+      "id": "2EfG2EoT8GFJrMiilbTVl2",
+      "display": "Donna Lewis"
+    },
+    {
+      "id": "4eQJIXFEujzhTVVS1gIfu5",
+      "display": "Deee-Lite"
+    },
+    {
+      "id": "1P6U1dCeHxPui5pIrGmndZ",
+      "display": "Air"
+    },
+    {
+      "id": "3TNt4aUIxgfy9aoaft5Jj2",
+      "display": "Yeah Yeah Yeahs"
+    },
+    {
+      "id": "7Js6Lde8thlIHXggv2SCBz",
+      "display": "Europe"
+    },
+    {
+      "id": "2BTZIqw0ntH9MvilQ3ewNY",
+      "display": "Cyndi Lauper"
+    },
+    {
+      "id": "51l0uqRxGaczYr4271pVIC",
+      "display": "The Bangles"
+    },
+    {
+      "id": "0rvjqX7ttXeg3mTy8Xscbt",
+      "display": "Journey"
+    },
+    {
+      "id": "0SD4eZCN4Kr0wQk56hCdh2",
+      "display": "Bonnie Tyler"
+    },
+    {
+      "id": "2yrbLiuBmc9j81lTX3XUuI",
+      "display": "The Jacksons"
+    },
+    {
+      "id": "55qiaow2sDYtjqu1mwRua6",
+      "display": "New Kids On The Block"
+    },
+    {
+      "id": "32vWCbZh0xZ4o9gkz4PsEU",
+      "display": "Dolly Parton"
+    },
+    {
+      "id": "1lYT0A0LV5DUfxr6doRP3d",
+      "display": "The Stone Roses"
+    },
+    {
+      "id": "0hLd40hVpRDGENe4KGZLnW",
+      "display": "Falco"
+    },
+    {
+      "id": "2kreKea2n96dXjcyAU9j5N",
+      "display": "The Pointer Sisters"
+    },
+    {
+      "id": "77tT1kLj6mCWtFNqiOmP9H",
+      "display": "Daryl Hall & John Oates"
+    },
+    {
+      "id": "5Y3Oa62lkjpNzmjWtDwDrc",
+      "display": "Robert Wright"
+    },
+    {
+      "id": "7Bah8E0kCETqEpAHI6CPzQ",
+      "display": "Mr. Mister"
+    },
+    {
+      "id": "1QxaPWG1POM8Ul6WwsHq4y",
+      "display": "John Farnham"
+    },
+    {
+      "id": "6Tz0QRoe083BcOo2YbG9lV",
+      "display": "Nena"
+    },
+    {
+      "id": "7fIvjotigTGWqjIz6EP1i4",
+      "display": "Four Tops"
+    },
+    {
+      "id": "74terC9ol9zMo8rfzhSOiG",
+      "display": "Jakob Hellman"
+    },
+    {
+      "id": "4L82oD5L2XQPwkHWOAJSad",
+      "display": "Di Leva"
+    },
+    {
+      "id": "0H8GJ568lnrhJZRqqeroUa",
+      "display": "Perssons Pack"
+    },
+    {
+      "id": "5zGcn4MRRQ6nB88eyh9TX7",
+      "display": "Jonas Lundqvist"
+    },
+    {
+      "id": "51UzvHi7sA1UKvm6H2UM5K",
+      "display": "Webstrarna"
+    },
+    {
+      "id": "7IK2JpZglDYTrso4ILEKE0",
+      "display": "Eva Dahlgren"
+    },
+    {
+      "id": "6hSnbFV44BMzWgP9alWsTc",
+      "display": "Joel Alme"
+    },
+    {
+      "id": "4EeCKtQAywZzC578wwGp1n",
+      "display": "Moonica Mac"
+    },
+    {
+      "id": "0ZpIOvLXBgAdqQdG4FSOXc",
+      "display": "Vasas flora och fauna"
+    },
+    {
+      "id": "6OZxE19iim1JKvCA3GmCVx",
+      "display": "bob hund"
+    },
+    {
+      "id": "4wp7fk3zvD1Nr688kd4VSc",
+      "display": "Junior Brielle"
+    },
+    {
+      "id": "3H7Ez7cwaYw4L3ELy4v3Lc",
+      "display": "Håkan Hellström"
+    },
+    {
+      "id": "4KXp3xtaz1wWXnu5u34eVX",
+      "display": "kent"
+    }
+  ],
+  "rounds": [
+    {
+      "roundId": "quizy-r1",
+      "trackId": "3JfkNCiXjHEVkbFfCQ417E",
+      "trackName": "Erase / Rewind",
+      "artistId": "1tqZaCwM57UFKjWoYwMLrw",
+      "artistName": "The Cardigans",
+      "year": 1998,
+      "spotifyUri": "spotify:track:3JfkNCiXjHEVkbFfCQ417E",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2735ef700b0fb079793f8b0d774"
+    },
+    {
+      "roundId": "quizy-r2",
+      "trackId": "0Ui05Ov0s4PnRc4JI3Pilg",
+      "trackName": "My Favourite Game",
+      "artistId": "1tqZaCwM57UFKjWoYwMLrw",
+      "artistName": "The Cardigans",
+      "year": 1998,
+      "spotifyUri": "spotify:track:0Ui05Ov0s4PnRc4JI3Pilg",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2735ef700b0fb079793f8b0d774"
+    },
+    {
+      "roundId": "quizy-r3",
+      "trackId": "7aQjPecQdIuNd1sz3KCDhD",
+      "trackName": "Lovefool",
+      "artistId": "1tqZaCwM57UFKjWoYwMLrw",
+      "artistName": "The Cardigans",
+      "year": 1996,
+      "spotifyUri": "spotify:track:7aQjPecQdIuNd1sz3KCDhD",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2730aac8ca880151fda470e91af"
+    },
+    {
+      "roundId": "quizy-r4",
+      "trackId": "0gEyKnHvgkrkBM6fbeHdwK",
+      "trackName": "Linger",
+      "artistId": "7t0rwkOPGlDPEhaOcVtOt9",
+      "artistName": "The Cranberries",
+      "year": 1993,
+      "spotifyUri": "spotify:track:0gEyKnHvgkrkBM6fbeHdwK",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273f6325f361d7803ad0d908451"
+    },
+    {
+      "roundId": "quizy-r5",
+      "trackId": "4JGKZS7h4Qa16gOU3oNETV",
+      "trackName": "Dreams",
+      "artistId": "7t0rwkOPGlDPEhaOcVtOt9",
+      "artistName": "The Cranberries",
+      "year": 1993,
+      "spotifyUri": "spotify:track:4JGKZS7h4Qa16gOU3oNETV",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273f6325f361d7803ad0d908451"
+    },
+    {
+      "roundId": "quizy-r6",
+      "trackId": "754kgU5rWscRTfvlsuEwFp",
+      "trackName": "Kiss Me",
+      "artistId": "0lJlKQvuM2Sd9DPPyUXcHg",
+      "artistName": "Sixpence None The Richer",
+      "year": 1997,
+      "spotifyUri": "spotify:track:754kgU5rWscRTfvlsuEwFp",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273cfc5eea6cfd77e89ed3ac5a4"
+    },
+    {
+      "roundId": "quizy-r7",
+      "trackId": "4aEpgQyr33rftQ0M7fHewP",
+      "trackName": "Return of the Mack",
+      "artistId": "6V3F8MZrOKdT9fU686ybE9",
+      "artistName": "Mark Morrison",
+      "year": 2018,
+      "spotifyUri": "spotify:track:4aEpgQyr33rftQ0M7fHewP",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r8",
+      "trackId": "21vYQVmxvNZJ1yf0cjQ8uC",
+      "trackName": "Never Ever",
+      "artistId": "5TDVKqW9uhqGjwwwKGuma4",
+      "artistName": "All Saints",
+      "year": 2018,
+      "spotifyUri": "spotify:track:21vYQVmxvNZJ1yf0cjQ8uC",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r9",
+      "trackId": "3o89yqIMUsFWN3BcEZIQPD",
+      "trackName": "Hand in My Pocket",
+      "artistId": "6ogn9necmbUdCppmNnGOdi",
+      "artistName": "Alanis Morissette",
+      "year": 2018,
+      "spotifyUri": "spotify:track:3o89yqIMUsFWN3BcEZIQPD",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r10",
+      "trackId": "0kV0hSRYRN4oZCpYpejF4z",
+      "trackName": "Iris",
+      "artistId": "2sil8z5kiy4r76CRTXxBCA",
+      "artistName": "The Goo Goo Dolls",
+      "year": 2018,
+      "spotifyUri": "spotify:track:0kV0hSRYRN4oZCpYpejF4z",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r11",
+      "trackId": "6SHoe9CicShSDvFBsuH72k",
+      "trackName": "In the Meantime",
+      "artistId": "3NZE8jDD2cCzd4vUyZ5CQQ",
+      "artistName": "Spacehog",
+      "year": 2018,
+      "spotifyUri": "spotify:track:6SHoe9CicShSDvFBsuH72k",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r12",
+      "trackId": "4m822CKvZFkLBzXEJNOAzf",
+      "trackName": "Mulder and Scully",
+      "artistId": "4Bgfzia8wyaGaTn42egzTv",
+      "artistName": "Catatonia",
+      "year": 2018,
+      "spotifyUri": "spotify:track:4m822CKvZFkLBzXEJNOAzf",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r13",
+      "trackId": "4sqfVCAoB2srnSxRMXjYxq",
+      "trackName": "Easy",
+      "artistId": "6GbCJZrI318Ybm8mY36Of5",
+      "artistName": "Faith No More",
+      "year": 2018,
+      "spotifyUri": "spotify:track:4sqfVCAoB2srnSxRMXjYxq",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r14",
+      "trackId": "4DCdDUYGmZp2Vk6f2hMjdB",
+      "trackName": "Stars",
+      "artistId": "1fa0cOhromAZdq2xRA4vv8",
+      "artistName": "Simply Red",
+      "year": 2018,
+      "spotifyUri": "spotify:track:4DCdDUYGmZp2Vk6f2hMjdB",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r15",
+      "trackId": "6ZLkYMInIvcqPotBLAg1hF",
+      "trackName": "I Love You Always Forever",
+      "artistId": "2EfG2EoT8GFJrMiilbTVl2",
+      "artistName": "Donna Lewis",
+      "year": 2018,
+      "spotifyUri": "spotify:track:6ZLkYMInIvcqPotBLAg1hF",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r16",
+      "trackId": "1ov8ue3eRq5tPDENGGG3gi",
+      "trackName": "Groove Is in the Heart",
+      "artistId": "4eQJIXFEujzhTVVS1gIfu5",
+      "artistName": "Deee-Lite",
+      "year": 2018,
+      "spotifyUri": "spotify:track:1ov8ue3eRq5tPDENGGG3gi",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r17",
+      "trackId": "51wLKDUGOgtroy77KmUjGZ",
+      "trackName": "Sexy Boy",
+      "artistId": "1P6U1dCeHxPui5pIrGmndZ",
+      "artistName": "Air",
+      "year": 2018,
+      "spotifyUri": "spotify:track:51wLKDUGOgtroy77KmUjGZ",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27392457b174d8eb1d9cd5ebb7f"
+    },
+    {
+      "roundId": "quizy-r18",
+      "trackId": "0hDQV9X1Da5JrwhK8gu86p",
+      "trackName": "Maps",
+      "artistId": "3TNt4aUIxgfy9aoaft5Jj2",
+      "artistName": "Yeah Yeah Yeahs",
+      "year": 2003,
+      "spotifyUri": "spotify:track:0hDQV9X1Da5JrwhK8gu86p",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2731b1cb4ef0f096f9d66fc3dc6"
+    },
+    {
+      "roundId": "quizy-r19",
+      "trackId": "7c5lMuvtz2gddhDyG5MjB6",
+      "trackName": "The Final Countdown",
+      "artistId": "7Js6Lde8thlIHXggv2SCBz",
+      "artistName": "Europe",
+      "year": 2010,
+      "spotifyUri": "spotify:track:7c5lMuvtz2gddhDyG5MjB6",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r20",
+      "trackId": "0xs0ewnEb6c2DlY7LjOD7t",
+      "trackName": "Girls Just Wanna Have Fun",
+      "artistId": "2BTZIqw0ntH9MvilQ3ewNY",
+      "artistName": "Cyndi Lauper",
+      "year": 2010,
+      "spotifyUri": "spotify:track:0xs0ewnEb6c2DlY7LjOD7t",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r21",
+      "trackId": "1gb5sUe1CuRBuT8twq8uhw",
+      "trackName": "Walk Like an Egyptian",
+      "artistId": "51l0uqRxGaczYr4271pVIC",
+      "artistName": "The Bangles",
+      "year": 2010,
+      "spotifyUri": "spotify:track:1gb5sUe1CuRBuT8twq8uhw",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r22",
+      "trackId": "3HRQtRUYnnuZY7fE900XtJ",
+      "trackName": "Don't Stop Believin'",
+      "artistId": "0rvjqX7ttXeg3mTy8Xscbt",
+      "artistName": "Journey",
+      "year": 2010,
+      "spotifyUri": "spotify:track:3HRQtRUYnnuZY7fE900XtJ",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r23",
+      "trackId": "7q3MflmodGZlOgZ799EpAb",
+      "trackName": "Total Eclipse of the Heart",
+      "artistId": "0SD4eZCN4Kr0wQk56hCdh2",
+      "artistName": "Bonnie Tyler",
+      "year": 2010,
+      "spotifyUri": "spotify:track:7q3MflmodGZlOgZ799EpAb",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r24",
+      "trackId": "5HIDIRwU38XVBozdoQwCml",
+      "trackName": "Can You Feel It",
+      "artistId": "2yrbLiuBmc9j81lTX3XUuI",
+      "artistName": "The Jacksons",
+      "year": 2010,
+      "spotifyUri": "spotify:track:5HIDIRwU38XVBozdoQwCml",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r25",
+      "trackId": "3wyM8rkowHQQrnTa32DsUJ",
+      "trackName": "You Got It (The Right Stuff)",
+      "artistId": "55qiaow2sDYtjqu1mwRua6",
+      "artistName": "New Kids On The Block",
+      "year": 2010,
+      "spotifyUri": "spotify:track:3wyM8rkowHQQrnTa32DsUJ",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r26",
+      "trackId": "3PUrao7xB9jYq31eKVjrV6",
+      "trackName": "9 to 5",
+      "artistId": "32vWCbZh0xZ4o9gkz4PsEU",
+      "artistName": "Dolly Parton",
+      "year": 2010,
+      "spotifyUri": "spotify:track:3PUrao7xB9jYq31eKVjrV6",
+      "startMs": 57385,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r27",
+      "trackId": "3DELXBOaCxwyLBr3s5AAlN",
+      "trackName": "Fools Gold",
+      "artistId": "1lYT0A0LV5DUfxr6doRP3d",
+      "artistName": "The Stone Roses",
+      "year": 2010,
+      "spotifyUri": "spotify:track:3DELXBOaCxwyLBr3s5AAlN",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r28",
+      "trackId": "1tDH02wIa3ysGiAe4qsLXL",
+      "trackName": "Rock Me Amadeus",
+      "artistId": "0hLd40hVpRDGENe4KGZLnW",
+      "artistName": "Falco",
+      "year": 2010,
+      "spotifyUri": "spotify:track:1tDH02wIa3ysGiAe4qsLXL",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r29",
+      "trackId": "53NWOfQXdEmbHqg5FGeXlG",
+      "trackName": "I'm So Excited",
+      "artistId": "2kreKea2n96dXjcyAU9j5N",
+      "artistName": "The Pointer Sisters",
+      "year": 2010,
+      "spotifyUri": "spotify:track:53NWOfQXdEmbHqg5FGeXlG",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r30",
+      "trackId": "7fZL8llLPKGqOYOJoDuHOs",
+      "trackName": "I Can't Go for That (No Can Do)",
+      "artistId": "77tT1kLj6mCWtFNqiOmP9H",
+      "artistName": "Daryl Hall & John Oates",
+      "year": 2010,
+      "spotifyUri": "spotify:track:7fZL8llLPKGqOYOJoDuHOs",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r31",
+      "trackId": "4A5VaeDFaX7XKV0JnsRSxw",
+      "trackName": "Broken Wings",
+      "artistId": "7Bah8E0kCETqEpAHI6CPzQ",
+      "artistName": "Mr. Mister",
+      "year": 2010,
+      "spotifyUri": "spotify:track:4A5VaeDFaX7XKV0JnsRSxw",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r32",
+      "trackId": "6weQnAmZRMyiMrZsyrhfYn",
+      "trackName": "You're the Voice",
+      "artistId": "1QxaPWG1POM8Ul6WwsHq4y",
+      "artistName": "John Farnham",
+      "year": 2010,
+      "spotifyUri": "spotify:track:6weQnAmZRMyiMrZsyrhfYn",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r33",
+      "trackId": "3KF7itkrBxHgqJfyc506Al",
+      "trackName": "99 Red Balloons",
+      "artistId": "6Tz0QRoe083BcOo2YbG9lV",
+      "artistName": "Nena",
+      "year": 2010,
+      "spotifyUri": "spotify:track:3KF7itkrBxHgqJfyc506Al",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r34",
+      "trackId": "5BoG24ogLB4Wi4Z8McYCXJ",
+      "trackName": "Loco in Acapulco",
+      "artistId": "7fIvjotigTGWqjIz6EP1i4",
+      "artistName": "Four Tops",
+      "year": 2010,
+      "spotifyUri": "spotify:track:5BoG24ogLB4Wi4Z8McYCXJ",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273db56ceff816b668b7b6f04ff"
+    },
+    {
+      "roundId": "quizy-r35",
+      "trackId": "0kHZKGxLrFXPbmYnq9xFBs",
+      "trackName": "Hon har ett sätt",
+      "artistId": "74terC9ol9zMo8rfzhSOiG",
+      "artistName": "Jakob Hellman",
+      "year": 2016,
+      "spotifyUri": "spotify:track:0kHZKGxLrFXPbmYnq9xFBs",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273456917b0e686300e957eb494"
+    },
+    {
+      "roundId": "quizy-r36",
+      "trackId": "27AEB295EYfQ6Y2FRKllRp",
+      "trackName": "Dansa din Djävul",
+      "artistId": "4L82oD5L2XQPwkHWOAJSad",
+      "artistName": "Di Leva",
+      "year": 2016,
+      "spotifyUri": "spotify:track:27AEB295EYfQ6Y2FRKllRp",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273456917b0e686300e957eb494"
+    },
+    {
+      "roundId": "quizy-r37",
+      "trackId": "3TWsKfuu2QgnEg8a9T7SJS",
+      "trackName": "Tusen dagar härifrån",
+      "artistId": "0H8GJ568lnrhJZRqqeroUa",
+      "artistName": "Perssons Pack",
+      "year": 1991,
+      "spotifyUri": "spotify:track:3TWsKfuu2QgnEg8a9T7SJS",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2737d2d1f0bb91d3dd0e1ae3ac8"
+    },
+    {
+      "roundId": "quizy-r38",
+      "trackId": "78jk64ySQjFPHrs0lxpvhi",
+      "trackName": "Den som ser havet",
+      "artistId": "5zGcn4MRRQ6nB88eyh9TX7",
+      "artistName": "Jonas Lundqvist",
+      "year": 2016,
+      "spotifyUri": "spotify:track:78jk64ySQjFPHrs0lxpvhi",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273bd2e51e55e7826208ebe5742"
+    },
+    {
+      "roundId": "quizy-r39",
+      "trackId": "22Lvddb70mRuhSWAXgorOJ",
+      "trackName": "Moln på marken",
+      "artistId": "51UzvHi7sA1UKvm6H2UM5K",
+      "artistName": "Webstrarna",
+      "year": 1992,
+      "spotifyUri": "spotify:track:22Lvddb70mRuhSWAXgorOJ",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2732bc0d433dc77cde6b000643a"
+    },
+    {
+      "roundId": "quizy-r40",
+      "trackId": "5hEaIMas1ZQT26ONK8CJch",
+      "trackName": "Det du vill ha",
+      "artistId": "5zGcn4MRRQ6nB88eyh9TX7",
+      "artistName": "Jonas Lundqvist",
+      "year": 2020,
+      "spotifyUri": "spotify:track:5hEaIMas1ZQT26ONK8CJch",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2736d4244d081e3e92609cfd988"
+    },
+    {
+      "roundId": "quizy-r41",
+      "trackId": "1GuVDjwsSrZ43mb4S72klT",
+      "trackName": "Våran sort",
+      "artistId": "6hSnbFV44BMzWgP9alWsTc",
+      "artistName": "Joel Alme",
+      "year": 2015,
+      "spotifyUri": "spotify:track:1GuVDjwsSrZ43mb4S72klT",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273c6d916b860931f472dd8127c"
+    },
+    {
+      "roundId": "quizy-r42",
+      "trackId": "2cGlzTR9gC93lc12cZ8afB",
+      "trackName": "80's",
+      "artistId": "4EeCKtQAywZzC578wwGp1n",
+      "artistName": "Moonica Mac",
+      "year": 2023,
+      "spotifyUri": "spotify:track:2cGlzTR9gC93lc12cZ8afB",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27303461b2a439d24d0b93cd9af"
+    },
+    {
+      "roundId": "quizy-r43",
+      "trackId": "0to0P21sSRwBPR6bakIExy",
+      "trackName": "Roland",
+      "artistId": "0ZpIOvLXBgAdqQdG4FSOXc",
+      "artistName": "Vasas flora och fauna",
+      "year": 2023,
+      "spotifyUri": "spotify:track:0to0P21sSRwBPR6bakIExy",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273820f539a8fa43a5f47facb47"
+    },
+    {
+      "roundId": "quizy-r44",
+      "trackId": "1UIqhGrSbjT61tIMJ8JUbW",
+      "trackName": "Helgen v. 48",
+      "artistId": "6OZxE19iim1JKvCA3GmCVx",
+      "artistName": "bob hund",
+      "year": 1998,
+      "spotifyUri": "spotify:track:1UIqhGrSbjT61tIMJ8JUbW",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27348f634283a4465d0a580e142"
+    },
+    {
+      "roundId": "quizy-r45",
+      "trackId": "3KPZph4AQ5eiCKqFjgExcA",
+      "trackName": "Stor på jorden",
+      "artistId": "4wp7fk3zvD1Nr688kd4VSc",
+      "artistName": "Junior Brielle",
+      "year": 2023,
+      "spotifyUri": "spotify:track:3KPZph4AQ5eiCKqFjgExcA",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273a0030dd045e6275eafa5f447"
+    },
+    {
+      "roundId": "quizy-r46",
+      "trackId": "0Hz0ySp6XYrBhEQPU16Hz8",
+      "trackName": "Valborg",
+      "artistId": "3H7Ez7cwaYw4L3ELy4v3Lc",
+      "artistName": "Håkan Hellström",
+      "year": 2013,
+      "spotifyUri": "spotify:track:0Hz0ySp6XYrBhEQPU16Hz8",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27395646685141ef8371ffacc8c"
+    },
+    {
+      "roundId": "quizy-r47",
+      "trackId": "3dHuioB3G88EKsiP8otWdn",
+      "trackName": "Man måste dö några gånger innan man kan leva",
+      "artistId": "3H7Ez7cwaYw4L3ELy4v3Lc",
+      "artistName": "Håkan Hellström",
+      "year": 2010,
+      "spotifyUri": "spotify:track:3dHuioB3G88EKsiP8otWdn",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273e40fe235b308f0a0832f6af5"
+    },
+    {
+      "roundId": "quizy-r48",
+      "trackId": "0FkloQbDAl1xjM1UC2jBIN",
+      "trackName": "En vän med en bil",
+      "artistId": "3H7Ez7cwaYw4L3ELy4v3Lc",
+      "artistName": "Håkan Hellström",
+      "year": 2000,
+      "spotifyUri": "spotify:track:0FkloQbDAl1xjM1UC2jBIN",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2739cf9c73c1277ff94d4608a32"
+    },
+    {
+      "roundId": "quizy-r49",
+      "trackId": "5YCKObb1A7YIeOKzXhREwz",
+      "trackName": "Pärlor",
+      "artistId": "4KXp3xtaz1wWXnu5u34eVX",
+      "artistName": "kent",
+      "year": 2002,
+      "spotifyUri": "spotify:track:5YCKObb1A7YIeOKzXhREwz",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b27338195e65555be2b7f9324e1c"
+    },
+    {
+      "roundId": "quizy-r50",
+      "trackId": "1neOfnHiC6ZQU3Cyy5Nf0j",
+      "trackName": "747",
+      "artistId": "4KXp3xtaz1wWXnu5u34eVX",
+      "artistName": "kent",
+      "year": 1997,
+      "spotifyUri": "spotify:track:1neOfnHiC6ZQU3Cyy5Nf0j",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b273654a593cae392f6ef9271c27"
+    },
+    {
+      "roundId": "quizy-r51",
+      "trackId": "0kNN4E7Ai5u5JprxgLJH3R",
+      "trackName": "Musik Non Stop",
+      "artistId": "4KXp3xtaz1wWXnu5u34eVX",
+      "artistName": "kent",
+      "year": 1999,
+      "spotifyUri": "spotify:track:0kNN4E7Ai5u5JprxgLJH3R",
+      "startMs": 60000,
+      "coverUrl": "https://i.scdn.co/image/ab67616d0000b2736c5bf5ae4cffb1b33894f49a"
+    }
+  ]
+}

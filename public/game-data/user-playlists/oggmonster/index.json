@@ -30,6 +30,16 @@
       "trackCount": 70,
       "artistCount": 83,
       "roundCount": 70
+    },
+    {
+      "id": "quizy",
+      "name": "Quizy",
+      "version": 1,
+      "sourcePlaylistId": "7FswXxTibwE6JHkuXvhoDZ",
+      "sourcePlaylistName": "Quizy",
+      "trackCount": 51,
+      "artistCount": 45,
+      "roundCount": 51
     }
   ]
 }
