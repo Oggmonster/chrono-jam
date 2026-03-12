@@ -11,8 +11,7 @@ import { Input } from "~/components/ui/input";
 import { searchAutocomplete, type AutocompleteItem } from "~/lib/autocomplete";
 import { phaseDurations, phaseLabel, useRoomState } from "~/lib/game-engine";
 import {
-  getCachedCatalogAutocompletePack,
-  loadCatalogAutocompletePack,
+  buildAutocompletePackForGamePack,
   loadGamePack,
   type CatalogAutocompletePack,
 } from "~/lib/gamepack";
@@ -36,14 +35,9 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const room = useRoomState(roomId, "player");
   const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
   usePlayerPresence(playerSession, room.controls);
-  const [autocomplete, setAutocomplete] = useState<CatalogAutocompletePack>(() => {
-    const cached = getCachedCatalogAutocompletePack();
-    return (
-      cached ?? {
-        tracks: { items: [], prefixIndex: {} },
-        artists: { items: [], prefixIndex: {} },
-      }
-    );
+  const [autocomplete, setAutocomplete] = useState<CatalogAutocompletePack>({
+    tracks: { items: [], prefixIndex: {} },
+    artists: { items: [], prefixIndex: {} },
   });
   const playlistKey = useMemo(() => room.state.playlistIds.join(","), [room.state.playlistIds]);
   const playlistIdsForLoad = useMemo(
@@ -313,19 +307,13 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     let cancelled = false;
 
     const hydrateAutocomplete = async () => {
-      const cached = getCachedCatalogAutocompletePack();
-      if (cached) {
-        setAutocomplete(cached);
-        return;
-      }
-
       try {
         const loadedPack = await loadGamePack(roomId, playlistIdsForLoad);
         if (cancelled) {
           return;
         }
 
-        const loadedAutocomplete = await loadCatalogAutocompletePack(loadedPack.pack.meta.hash);
+        const loadedAutocomplete = buildAutocompletePackForGamePack(loadedPack.pack);
         if (!cancelled) {
           setAutocomplete(loadedAutocomplete);
         }
@@ -965,7 +953,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                             type="button"
                             role="option"
                             aria-selected={trackActiveSuggestionIndex === suggestionIndex}
-                            className={`w-full px-3 py-2 text-left hover:bg-[hsl(var(--muted)/0.5)] ${
+                            className={`w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)] ${
                               trackActiveSuggestionIndex === suggestionIndex
                                 ? "bg-[hsl(var(--muted)/0.65)]"
                                 : ""
@@ -980,10 +968,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                               selectTrackSuggestion(suggestion);
                             }}
                           >
-                            <span className="block text-sm font-semibold text-card-foreground">{suggestion.display}</span>
-                            {suggestion.detail ? (
-                              <span className="block text-xs font-medium text-muted-foreground">{suggestion.detail}</span>
-                            ) : null}
+                            {suggestion.display}
                           </button>
                         </li>
                       ))}
@@ -995,7 +980,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 </div>
                 <p className="min-h-4 text-xs font-semibold text-muted-foreground">
                   {selectedTrack && !intermissionOpen
-                    ? `Selected title: ${selectedTrack.display}${selectedTrack.detail ? ` - ${selectedTrack.detail}` : ""}`
+                    ? `Selected title: ${selectedTrack.display}`
                     : displayedTrackQuery.trim().length >= 2
                       ? "Pick one suggestion to make this count."
                       : "Type and choose from the list."}

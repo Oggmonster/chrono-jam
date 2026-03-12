@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  loadCatalogAutocompletePack,
+  buildAutocompletePackForGamePack,
   loadGamePack,
   type GamePackLoadResult,
 } from "~/lib/gamepack";
@@ -70,7 +70,7 @@ export function useLobbyPreload(roomId: string, enabled: boolean, playlistIds: s
           gamePackSource: loaded.source,
         }));
 
-        await loadCatalogAutocompletePack(loaded.pack.meta.hash);
+        buildAutocompletePackForGamePack(loaded.pack);
         if (cancelled) {
           return;
         }

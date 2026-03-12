@@ -1,5 +1,4 @@
 import {
-  buildAutocompleteIndex,
   normalizeForAutocomplete,
   type AutocompleteIndex,
 } from "~/lib/autocomplete";
@@ -9,12 +8,12 @@ import {
   buildUserPlaylistSelectionId,
   parsePlaylistSelectionId,
 } from "~/lib/playlist-selection";
+import { buildAutocompletePackFromRoundPool, dedupeByNormalizedTitle } from "~/lib/round-pool";
 import { cleanTrackTitle } from "~/lib/track-metadata";
 
 export type CatalogEntry = {
   id: string;
   display: string;
-  detail?: string;
 };
 
 export type GamePackRound = {
@@ -183,11 +182,9 @@ async function fetchJsonAsset<T>(path: string) {
 function sanitizeCatalogEntry(entry: CatalogEntry): CatalogEntry {
   const id = entry.id.trim();
   const display = cleanTrackTitle(entry.display);
-  const detail = entry.detail?.trim();
   return {
     id,
     display: display || entry.display.trim(),
-    detail: detail || undefined,
   };
 }
 
@@ -202,20 +199,11 @@ function sanitizeRound(round: GamePackRound): GamePackRound {
 }
 
 function sanitizePlaylistPack(asset: PlaylistPackAsset): PlaylistPackAsset {
-  const sanitizedRounds = asset.rounds.map(sanitizeRound);
-  const roundArtistByTrackId = new Map(
-    sanitizedRounds.map((round) => [round.trackId.trim(), round.artistName.trim()] as const),
-  );
-
   return {
     ...asset,
-    tracks: asset.tracks.map((entry) => {
-      const sanitized = sanitizeCatalogEntry(entry);
-      const detail = sanitized.detail ?? roundArtistByTrackId.get(sanitized.id);
-      return detail ? { ...sanitized, detail } : sanitized;
-    }),
+    tracks: asset.tracks.map(sanitizeCatalogEntry),
     artists: asset.artists.map(sanitizeCatalogEntry),
-    rounds: sanitizedRounds,
+    rounds: asset.rounds.map(sanitizeRound),
   };
 }
 
@@ -256,24 +244,13 @@ async function writeStoredPlaylistPack(db: IDBDatabase, selectionId: string, ass
   await transactionDone(tx);
 }
 
-async function readCatalogEntries(db: IDBDatabase, storeName: typeof storeTracks | typeof storeArtists) {
-  const tx = db.transaction(storeName, "readonly");
-  const request = tx.objectStore(storeName).getAll();
-  const entries = (await requestPromise(request)) as CatalogEntry[];
-  await transactionDone(tx);
-  return entries;
-}
-
 async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTracks | typeof storeArtists, entries: CatalogEntry[]) {
-  const dedupeNormalizedDisplay = storeName !== storeTracks;
   const readTx = db.transaction(storeName, "readonly");
   const readRequest = readTx.objectStore(storeName).getAll();
   const existing = (await requestPromise(readRequest)) as CatalogEntry[];
   await transactionDone(readTx);
 
-  const knownNormDisplays = dedupeNormalizedDisplay
-    ? new Set(existing.map((entry) => normalizeForAutocomplete(entry.display)))
-    : null;
+  const knownNormDisplays = new Set(existing.map((entry) => normalizeForAutocomplete(entry.display)));
   const existingById = new Map(existing.map((entry) => [entry.id, entry] as const));
   const tx = db.transaction(storeName, "readwrite");
   const store = tx.objectStore(storeName);
@@ -281,7 +258,6 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
   for (const entry of entries) {
     const id = entry.id.trim();
     const display = entry.display.trim();
-    const detail = entry.detail?.trim();
     if (!id || !display) {
       continue;
     }
@@ -293,24 +269,24 @@ async function mergeCatalogEntries(db: IDBDatabase, storeName: typeof storeTrack
 
     const existingEntry = existingById.get(id);
     if (existingEntry) {
-      if (existingEntry.display !== display || existingEntry.detail !== detail) {
-        store.put({ id, display, detail });
+      if (existingEntry.display !== display) {
+        store.put({ id, display });
         const existingNorm = normalizeForAutocomplete(existingEntry.display);
         if (existingNorm) {
-          knownNormDisplays?.delete(existingNorm);
+          knownNormDisplays.delete(existingNorm);
         }
-        knownNormDisplays?.add(normDisplay);
-        existingById.set(id, { id, display, detail });
+        knownNormDisplays.add(normDisplay);
+        existingById.set(id, { id, display });
       }
       continue;
     }
 
-    if (knownNormDisplays?.has(normDisplay)) {
+    if (knownNormDisplays.has(normDisplay)) {
       continue;
     }
 
-    store.put({ id, display, detail });
-    knownNormDisplays?.add(normDisplay);
+    store.put({ id, display });
+    knownNormDisplays.add(normDisplay);
   }
 
   await transactionDone(tx);
@@ -447,8 +423,6 @@ async function ensurePlaylistPack(
     const cachedPack = await readStoredPlaylistPack(db, request.selectionId);
     if (cachedPack) {
       const sanitizedCachedPack = sanitizePlaylistPack(cachedPack);
-      await mergeCatalogEntries(db, storeTracks, sanitizedCachedPack.tracks);
-      await mergeCatalogEntries(db, storeArtists, sanitizedCachedPack.artists);
       return {
         source: "cache",
         hash: existing.hash,
@@ -535,7 +509,8 @@ export async function loadGamePack(
     );
 
     const allRounds = playlistResults.flatMap((result) => result.pack.rounds);
-    const dedupedRounds = Array.from(new Map(allRounds.map((round) => [round.roundId, round] as const)).values());
+    const uniqueRounds = Array.from(new Map(allRounds.map((round) => [round.roundId, round] as const)).values());
+    const dedupedRounds = dedupeByNormalizedTitle(uniqueRounds, (round) => round.trackName);
     const combinedHash = stableHash({
       packs: playlistResults.map((result) => result.hash).sort(),
       roundIds: dedupedRounds.map((round) => round.roundId),
@@ -584,25 +559,22 @@ export function getCachedCatalogAutocompletePack(expectedKey?: string) {
   return cachedAutocompletePack.pack;
 }
 
-export async function loadCatalogAutocompletePack(cacheKey: string): Promise<CatalogAutocompletePack> {
-  if (cachedAutocompletePack && cachedAutocompletePack.key === cacheKey) {
+export function buildAutocompletePackForGamePack(gamePack: GamePack): CatalogAutocompletePack {
+  if (cachedAutocompletePack && cachedAutocompletePack.key === gamePack.meta.hash) {
     return cachedAutocompletePack.pack;
   }
 
-  const db = await openCatalogDb();
-  const [tracks, artists] = await Promise.all([
-    readCatalogEntries(db, storeTracks),
-    readCatalogEntries(db, storeArtists),
-  ]);
-  db.close();
-
-  const pack: CatalogAutocompletePack = {
-    tracks: buildAutocompleteIndex(tracks, { dedupeNormalizedDisplay: false }),
-    artists: buildAutocompleteIndex(artists),
-  };
+  const pack = buildAutocompletePackFromRoundPool(
+    gamePack.rounds.map((round) => ({
+      trackId: round.trackId,
+      title: round.trackName,
+      artistId: round.artistId,
+      artist: round.artistName,
+    })),
+  );
 
   cachedAutocompletePack = {
-    key: cacheKey,
+    key: gamePack.meta.hash,
     pack,
   };
 

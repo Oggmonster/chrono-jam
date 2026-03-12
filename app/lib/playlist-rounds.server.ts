@@ -7,6 +7,7 @@ import {
   buildUserPlaylistSelectionId,
   parsePlaylistSelectionId,
 } from "~/lib/playlist-selection";
+import { dedupeByNormalizedTitle } from "~/lib/round-pool";
 import { cleanTrackTitle } from "~/lib/track-metadata";
 
 export type PlaylistRound = {
@@ -323,7 +324,7 @@ export function loadRoundsForPlaylistIds(playlistIds: string[]) {
     }
   }
 
-  const rounds = [...byRoundId.values()];
+  const rounds = dedupeByNormalizedTitle([...byRoundId.values()], (round) => round.title);
   const finalRounds = rounds.length > 0 ? rounds : fallbackRounds();
   playlistRoundCache.set(cacheKey, finalRounds);
   return finalRounds;

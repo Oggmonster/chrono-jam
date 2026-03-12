@@ -1,13 +1,11 @@
 export type AutocompleteEntry = {
   id: string;
   display: string;
-  detail?: string;
 };
 
 export type AutocompleteItem = {
   id: string;
   display: string;
-  detail?: string;
   norm: string;
   tokens: string[];
 };
@@ -73,7 +71,6 @@ export function buildAutocompleteIndex(
   for (const entry of entries) {
     const id = entry.id.trim();
     const display = entry.display.trim();
-    const detail = entry.detail?.trim();
     if (!id || !display || seenIds.has(id)) {
       continue;
     }
@@ -92,7 +89,6 @@ export function buildAutocompleteIndex(
     items.push({
       id,
       display,
-      detail: detail && detail !== display ? detail : undefined,
       norm,
       tokens: tokenize(norm),
     });
@@ -178,12 +174,7 @@ export function searchAutocomplete(
       return a.rank - b.rank;
     }
 
-    const displayCompare = a.item.display.localeCompare(b.item.display);
-    if (displayCompare !== 0) {
-      return displayCompare;
-    }
-
-    return (a.item.detail ?? "").localeCompare(b.item.detail ?? "");
+    return a.item.display.localeCompare(b.item.display);
   });
 
   return ranked.slice(0, limit).map((entry) => entry.item);

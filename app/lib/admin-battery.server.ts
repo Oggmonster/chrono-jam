@@ -8,6 +8,7 @@ import {
   normalizeSpotifyUserIdForStorage,
   parsePlaylistSelectionId,
 } from "~/lib/playlist-selection";
+import { dedupeByNormalizedTitle } from "~/lib/round-pool";
 import { cleanTrackTitle, hasRemasterMarker } from "~/lib/track-metadata";
 
 type SpotifyPlaylistMetaResponse = {
@@ -395,7 +396,6 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
         tracks.push({
           id: trackId,
           display: trackName,
-          detail: primaryArtist?.name.trim() || undefined,
         });
       }
 
@@ -591,6 +591,7 @@ async function writePlaylistPack(
   buildResult: PlaylistPackBuildResult,
   storage: PlaylistPackStorageTarget,
 ): Promise<GeneratePlaylistPackResult> {
+  const dedupedRoundCount = dedupeByNormalizedTitle(buildResult.rounds, (round) => round.trackName).length;
   const version = await nextPlaylistPackVersion(buildResult.playlistPackId, storage.playlistsDir);
   const fileName = `${buildResult.playlistPackId}.v${version}.json`;
   const playlistPackPath = path.join(storage.playlistsDir, fileName);
@@ -617,7 +618,7 @@ async function writePlaylistPack(
         sourcePlaylistName: buildResult.sourcePlaylistName,
         trackCount: buildResult.tracks.length,
         artistCount: buildResult.artists.length,
-        roundCount: buildResult.rounds.length,
+        roundCount: dedupedRoundCount,
       },
     ].sort((a, b) => a.id.localeCompare(b.id)),
   };
@@ -635,7 +636,7 @@ async function writePlaylistPack(
     sourcePlaylistName: buildResult.sourcePlaylistName,
     trackCount: payload.tracks.length,
     artistCount: payload.artists.length,
-    roundCount: payload.rounds.length,
+    roundCount: dedupedRoundCount,
   };
 }
 
