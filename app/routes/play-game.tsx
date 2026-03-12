@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "./+types/play-game";
 import { Link } from "react-router";
 import { CheckCircle2, Crown, Home, Music, Quote, Star, TrendingUp, Trophy, XCircle } from "lucide-react";
@@ -19,12 +19,6 @@ import {
 import { pickMusicQuote } from "~/lib/music-quotes";
 import { usePlayerPresence } from "~/lib/player-presence";
 import { getPlayerSession, type PlayerSession } from "~/lib/player-session";
-import {
-  buildTimelineEntries,
-  clampTimelineInsertIndex,
-  timelineEntryLabel,
-  timelineSlotLabel,
-} from "~/lib/timeline";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "ChronoJam | Player Game" }];
@@ -78,9 +72,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
   const [artistInputFocused, setArtistInputFocused] = useState(false);
   const [trackActiveSuggestionIndex, setTrackActiveSuggestionIndex] = useState(-1);
   const [artistActiveSuggestionIndex, setArtistActiveSuggestionIndex] = useState(-1);
-  const [timelineDragging, setTimelineDragging] = useState(false);
-  const [timelineHoverSlot, setTimelineHoverSlot] = useState<number | null>(null);
-  const timelineListRef = useRef<HTMLDivElement | null>(null);
   const revealCardRef = useRef<HTMLDivElement | null>(null);
   const [finalRevealReady, setFinalRevealReady] = useState(false);
 
@@ -103,17 +94,10 @@ export default function PlayGame({ params }: Route.ComponentProps) {
           : "default";
 
   const submissionKey = playerSession ? `${playerSession.id}:${room.round.id}` : "";
-  const timelineSubmissionKey = playerSession ? `${playerSession.id}:${room.round.id}` : "";
   const currentSubmission = submissionKey ? room.state.guessSubmissions[submissionKey] : undefined;
-  const currentTimelineSubmission = timelineSubmissionKey ? room.state.timelineSubmissions[timelineSubmissionKey] : undefined;
   const playerEligible = playerSession ? room.state.allowedPlayerIds.includes(playerSession.id) : false;
-  const canEditGuess = room.state.lifecycle === "running" && room.state.phase === "LISTEN" && !currentSubmission;
-  const canSubmitGuess = canEditGuess && playerEligible && Boolean(selectedTrack) && Boolean(selectedArtist);
-  const canSubmitTimeline =
-    room.state.lifecycle === "running" &&
-    room.state.phase === "LISTEN" &&
-    playerEligible &&
-    Boolean(currentSubmission);
+  const canEditGuess =
+    room.state.lifecycle === "running" && room.state.phase === "LISTEN" && Boolean(playerSession) && playerEligible;
   const revealOpen = room.state.phase === "REVEAL" || room.state.lifecycle === "finished";
   const intermissionOpen = room.state.phase === "INTERMISSION";
   const finishedGame = room.state.lifecycle === "finished";
@@ -131,11 +115,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
         }))
         .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
     [room.state.participants, room.state.scores],
-  );
-
-  const timelineEntries = useMemo(
-    () => buildTimelineEntries(room.state.timelineRoundIds, room.state.rounds),
-    [room.state.rounds, room.state.timelineRoundIds],
   );
 
   const trackSuggestions = useMemo(() => {
@@ -201,8 +180,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     setArtistInputFocused(false);
     setTrackActiveSuggestionIndex(-1);
     setArtistActiveSuggestionIndex(-1);
-    setTimelineDragging(false);
-    setTimelineHoverSlot(null);
   }, [room.round.id]);
 
   useEffect(() => {
@@ -218,8 +195,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     setArtistInputFocused(false);
     setTrackActiveSuggestionIndex(-1);
     setArtistActiveSuggestionIndex(-1);
-    setTimelineDragging(false);
-    setTimelineHoverSlot(null);
   }, [room.state.phase]);
 
   useEffect(() => {
@@ -227,22 +202,38 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       return;
     }
 
-    if (!currentSubmission) {
-      return;
-    }
+    const nextTrackId = currentSubmission?.trackId ?? "";
+    const nextArtistId = currentSubmission?.artistId ?? "";
+    const nextTrack = nextTrackId ? trackLookup[nextTrackId] : undefined;
+    const nextArtist = nextArtistId ? artistLookup[nextArtistId] : undefined;
 
-    const nextTrack = trackLookup[currentSubmission.trackId];
-    const nextArtist = artistLookup[currentSubmission.artistId];
-
-    if (nextTrack) {
+    if (nextTrack && selectedTrack?.id !== nextTrack.id) {
       setSelectedTrack(nextTrack);
       setTrackQuery(nextTrack.display);
+    } else if (!nextTrackId && selectedTrack) {
+      setSelectedTrack(null);
+      if (!trackInputFocused) {
+        setTrackQuery("");
+      }
     }
-    if (nextArtist) {
+
+    if (nextArtist && selectedArtist?.id !== nextArtist.id) {
       setSelectedArtist(nextArtist);
       setArtistQuery(nextArtist.display);
+    } else if (!nextArtistId && selectedArtist) {
+      setSelectedArtist(null);
+      if (!artistInputFocused) {
+        setArtistQuery("");
+      }
     }
-  }, [artistLookup, currentSubmission, room.state.phase, trackLookup]);
+  }, [
+    artistInputFocused,
+    artistLookup,
+    currentSubmission,
+    room.state.phase,
+    trackInputFocused,
+    trackLookup,
+  ]);
 
   useEffect(() => {
     if (!revealOpen || intermissionOpen) {
@@ -293,11 +284,25 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     );
   }, [artistSuggestions]);
 
+  const syncGuess = (trackId: string, artistId: string) => {
+    if (!playerSession || !playerEligible) {
+      return;
+    }
+
+    room.controls.submitGuess({
+      playerId: playerSession.id,
+      roundId: room.round.id,
+      trackId,
+      artistId,
+    });
+  };
+
   const selectTrackSuggestion = (suggestion: AutocompleteItem) => {
     setSelectedTrack(suggestion);
     setTrackQuery(suggestion.display);
     setTrackInputFocused(false);
     setTrackActiveSuggestionIndex(-1);
+    syncGuess(suggestion.id, selectedArtist?.id ?? currentSubmission?.artistId ?? "");
   };
 
   const selectArtistSuggestion = (suggestion: AutocompleteItem) => {
@@ -305,112 +310,26 @@ export default function PlayGame({ params }: Route.ComponentProps) {
     setArtistQuery(suggestion.display);
     setArtistInputFocused(false);
     setArtistActiveSuggestionIndex(-1);
+    syncGuess(selectedTrack?.id ?? currentSubmission?.trackId ?? "", suggestion.id);
   };
 
-  const submitGuess = () => {
-    if (!playerSession || !canSubmitGuess || !selectedTrack || !selectedArtist) {
-      return;
-    }
-
-    room.controls.submitGuess({
-      playerId: playerSession.id,
-      roundId: room.round.id,
-      trackId: selectedTrack.id,
-      artistId: selectedArtist.id,
-    });
+  const clearGuesses = () => {
+    setSelectedTrack(null);
+    setTrackQuery("");
+    setTrackInputFocused(false);
+    setTrackActiveSuggestionIndex(-1);
+    setSelectedArtist(null);
+    setArtistQuery("");
+    setArtistInputFocused(false);
+    setArtistActiveSuggestionIndex(-1);
+    syncGuess("", "");
   };
-
-  const submitTimeline = (insertIndex: number) => {
-    if (!playerSession || !canSubmitTimeline) {
-      return;
-    }
-
-    room.controls.submitTimeline({
-      playerId: playerSession.id,
-      roundId: room.round.id,
-      insertIndex,
-    });
-  };
-
-  const handleTimelineDrop = (insertIndex: number) => {
-    submitTimeline(insertIndex);
-    setTimelineDragging(false);
-    setTimelineHoverSlot(null);
-  };
-
-  const resolveTimelineInsertIndex = (clientY: number) => {
-    const entryNodes = timelineListRef.current?.querySelectorAll<HTMLElement>("[data-timeline-entry='true']");
-
-    if (!entryNodes || entryNodes.length === 0) {
-      return 0;
-    }
-
-    for (let index = 0; index < entryNodes.length; index += 1) {
-      const rect = entryNodes[index]!.getBoundingClientRect();
-      if (clientY < rect.top + rect.height / 2) {
-        return index;
-      }
-    }
-
-    return entryNodes.length;
-  };
-
-  const handleTimelineItemDragOver = (event: DragEvent<HTMLDivElement>, itemIndex: number) => {
-    if (!canSubmitTimeline) {
-      return;
-    }
-
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const insertIndex = event.clientY < rect.top + rect.height / 2 ? itemIndex : itemIndex + 1;
-    setTimelineHoverSlot(insertIndex);
-  };
-
-  useEffect(() => {
-    if (!timelineDragging || !canSubmitTimeline) {
-      return;
-    }
-
-    const onTouchMove = (event: TouchEvent) => {
-      if (event.touches.length === 0) {
-        return;
-      }
-
-      event.preventDefault();
-      const insertIndex = resolveTimelineInsertIndex(event.touches[0]!.clientY);
-      setTimelineHoverSlot(insertIndex);
-    };
-
-    const onTouchEnd = (event: TouchEvent) => {
-      event.preventDefault();
-      const touch = event.changedTouches[0];
-      const insertIndex = touch
-        ? resolveTimelineInsertIndex(touch.clientY)
-        : timelineHoverSlot ?? timelineEntries.length;
-      handleTimelineDrop(insertIndex);
-    };
-
-    const onTouchCancel = () => {
-      setTimelineDragging(false);
-      setTimelineHoverSlot(null);
-    };
-
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onTouchEnd, { passive: false });
-    window.addEventListener("touchcancel", onTouchCancel);
-
-    return () => {
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
-      window.removeEventListener("touchcancel", onTouchCancel);
-    };
-  }, [canSubmitTimeline, timelineDragging, timelineEntries.length, timelineHoverSlot]);
 
   const trackCorrect = currentSubmission?.trackId === room.round.trackId;
   const artistCorrect = currentSubmission?.artistId === room.round.artistId;
-  const guessPending = room.state.phase === "LISTEN" && !currentSubmission;
-  const timelinePending = room.state.phase === "LISTEN" && Boolean(currentSubmission) && !currentTimelineSubmission;
-  const timelinePlaced = room.state.phase === "LISTEN" && Boolean(currentSubmission) && Boolean(currentTimelineSubmission);
+  const hasTrackGuess = Boolean(currentSubmission?.trackId);
+  const hasArtistGuess = Boolean(currentSubmission?.artistId);
+  const guessPending = room.state.phase === "LISTEN" && !hasTrackGuess && !hasArtistGuess;
   const displayedTrackQuery = intermissionOpen ? "" : trackQuery;
   const displayedArtistQuery = intermissionOpen ? "" : artistQuery;
   const playerBreakdown =
@@ -418,15 +337,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       ? room.state.roundBreakdowns[room.round.id]!.players[playerSession.id]
       : undefined;
   const currentScore = playerSession ? room.state.scores[playerSession.id] ?? 0 : 0;
-  const timelinePreviewIndex =
-    timelineDragging && canSubmitTimeline ? (timelineHoverSlot ?? timelineEntries.length) : null;
-  const lockedTimelineInsertIndex =
-    room.state.phase === "LISTEN" && currentTimelineSubmission
-      ? clampTimelineInsertIndex(currentTimelineSubmission.insertIndex, timelineEntries.length)
-      : null;
-  const timelineDisplayInsertIndex = timelinePreviewIndex ?? lockedTimelineInsertIndex;
-  const timelinePositionLabel =
-    timelineDisplayInsertIndex === null ? null : timelineSlotLabel(timelineEntries, timelineDisplayInsertIndex);
 
   const revealRows = [
     {
@@ -440,18 +350,6 @@ export default function PlayGame({ params }: Route.ComponentProps) {
       label: "Artist",
       correct: Boolean(artistCorrect),
       points: playerBreakdown?.points.artist ?? 0,
-    },
-    {
-      id: "year",
-      label: "Year",
-      correct: Boolean(playerBreakdown?.timelineCorrect),
-      points: playerBreakdown?.points.timeline ?? 0,
-    },
-    {
-      id: "speed",
-      label: "Speed bonus",
-      correct: Boolean(trackCorrect && artistCorrect),
-      points: playerBreakdown?.points.speed ?? 0,
     },
   ];
   const intermissionCompactView = intermissionOpen;
@@ -764,7 +662,9 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                         <span className="text-sm font-semibold text-card-foreground">Now Listening...</span>
                       </div>
                       <p className="text-sm text-muted-foreground">Answer hidden until reveal</p>
-                      <p className="text-xs text-muted-foreground">Use autocomplete to lock your guess in this phase.</p>
+                      <p className="text-xs text-muted-foreground">
+                        Pick one autocomplete option per field. Your latest selection is your live guess.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -785,13 +685,21 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   <Input
                     id="track-guess-input"
                     placeholder="Type at least 2 chars"
-                    className="h-11 border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-card-foreground placeholder:text-muted-foreground"
+                    className={`h-11 border-2 text-card-foreground placeholder:text-muted-foreground transition-colors ${
+                      selectedTrack
+                        ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)] ring-2 ring-[hsl(var(--primary)/0.15)]"
+                        : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)]"
+                    }`}
                     value={displayedTrackQuery}
                     onChange={(event) => {
                       const nextValue = event.target.value;
+                      const shouldClearTrackGuess = Boolean(selectedTrack || currentSubmission?.trackId);
                       setTrackQuery(nextValue);
                       setSelectedTrack(null);
                       setTrackActiveSuggestionIndex(0);
+                      if (shouldClearTrackGuess) {
+                        syncGuess("", selectedArtist?.id ?? currentSubmission?.artistId ?? "");
+                      }
                     }}
                     onFocus={() => {
                       setTrackInputFocused(true);
@@ -900,7 +808,11 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   ) : null}
                 </div>
                 <p className="min-h-4 text-xs font-semibold text-muted-foreground">
-                  {selectedTrack && !intermissionOpen ? `Selected: ${selectedTrack.display}` : ""}
+                  {selectedTrack && !intermissionOpen
+                    ? `Selected and counting: ${selectedTrack.display}`
+                    : displayedTrackQuery.trim().length >= 2
+                      ? "Pick one suggestion to make this count."
+                      : "Type and choose from the list."}
                 </p>
               </div>
               <div className="grid gap-2 text-sm font-bold text-card-foreground">
@@ -909,13 +821,21 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   <Input
                     id="artist-guess-input"
                     placeholder="Type at least 2 chars"
-                    className="h-11 border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-card-foreground placeholder:text-muted-foreground"
+                    className={`h-11 border-2 text-card-foreground placeholder:text-muted-foreground transition-colors ${
+                      selectedArtist
+                        ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)] ring-2 ring-[hsl(var(--primary)/0.15)]"
+                        : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)]"
+                    }`}
                     value={displayedArtistQuery}
                     onChange={(event) => {
                       const nextValue = event.target.value;
+                      const shouldClearArtistGuess = Boolean(selectedArtist || currentSubmission?.artistId);
                       setArtistQuery(nextValue);
                       setSelectedArtist(null);
                       setArtistActiveSuggestionIndex(0);
+                      if (shouldClearArtistGuess) {
+                        syncGuess(selectedTrack?.id ?? currentSubmission?.trackId ?? "", "");
+                      }
                     }}
                     onFocus={() => {
                       setArtistInputFocused(true);
@@ -1024,198 +944,44 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                   ) : null}
                 </div>
                 <p className="min-h-4 text-xs font-semibold text-muted-foreground">
-                  {selectedArtist && !intermissionOpen ? `Selected: ${selectedArtist.display}` : ""}
+                  {selectedArtist && !intermissionOpen
+                    ? `Selected and counting: ${selectedArtist.display}`
+                    : displayedArtistQuery.trim().length >= 2
+                      ? "Pick one suggestion to make this count."
+                      : "Type and choose from the list."}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                className="h-10 px-6 font-bold shadow-md shadow-[hsl(var(--primary)/0.2)]"
-                onClick={submitGuess}
-                disabled={!canSubmitGuess}
-              >
-                Lock Guess
-              </Button>
-              <Button
                 variant="outline"
                 className="h-10 border-[hsl(var(--input))] bg-card text-card-foreground hover:bg-[hsl(var(--muted)/0.5)]"
-                onClick={() => {
-                  setSelectedTrack(null);
-                  setTrackQuery("");
-                  setTrackInputFocused(false);
-                  setTrackActiveSuggestionIndex(-1);
-                  setSelectedArtist(null);
-                  setArtistQuery("");
-                  setArtistInputFocused(false);
-                  setArtistActiveSuggestionIndex(-1);
-                }}
+                onClick={clearGuesses}
                 disabled={!canEditGuess}
               >
                 Clear
               </Button>
-              {guessPending ? <Badge variant="warning">Waiting for your guess</Badge> : null}
-              {currentSubmission ? <Badge variant="success">Guess locked</Badge> : null}
-              {timelinePending ? <Badge variant="warning">Place the timeline</Badge> : null}
-              {timelinePlaced ? <Badge variant="success">Timeline position saved</Badge> : null}
-              {!playerSession && canEditGuess ? (
+              <Badge variant="default">1 point title + 1 point artist</Badge>
+              {guessPending ? <Badge variant="warning">Waiting for your selections</Badge> : null}
+              {hasTrackGuess ? <Badge variant="success">Title saved</Badge> : null}
+              {hasArtistGuess ? <Badge variant="success">Artist saved</Badge> : null}
+              {!playerSession && room.state.phase === "LISTEN" ? (
                 <Badge variant="warning">Join with player name to submit</Badge>
               ) : null}
-              {playerSession && canEditGuess && !playerEligible ? (
+              {playerSession && room.state.phase === "LISTEN" && !playerEligible ? (
                 <Badge variant="warning">Spectating only: joined after game start</Badge>
               ) : null}
             </div>
 
-            <div className="rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.35)] p-3">
-              <p className="text-sm font-bold text-card-foreground">Timeline placement</p>
-              <p className="text-xs font-semibold text-muted-foreground">
-                {currentSubmission
-                  ? "Drag the release year between items. You can keep moving it until the timer ends."
-                  : "Lock your guess to unlock timeline placement."}
+            <div className="rounded-2xl border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.35)] p-4">
+              <p className="text-sm font-bold text-card-foreground">Quick rules</p>
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                You can change either answer until the timer ends. Only highlighted selections count.
               </p>
-              {currentSubmission ? (
-                <p className="mt-1 text-xs font-semibold text-muted-foreground" role="status" aria-live="polite">
-                  Current position: {timelinePositionLabel ?? "Not placed"}
-                </p>
-              ) : null}
-              <div className="mt-3 rounded-xl border-2 border-dashed border-[hsl(var(--input))] bg-[hsl(var(--card)/0.7)] px-3 py-2">
-                <div
-                  draggable={canSubmitTimeline}
-                  onDragStart={() => {
-                    setTimelineDragging(true);
-                    setTimelineHoverSlot(
-                      lockedTimelineInsertIndex ?? timelineEntries.length,
-                    );
-                  }}
-                  onDragEnd={() => {
-                    setTimelineDragging(false);
-                    setTimelineHoverSlot(null);
-                  }}
-                  onTouchStart={(event) => {
-                    if (!canSubmitTimeline || event.touches.length === 0) {
-                      return;
-                    }
-
-                    event.preventDefault();
-                    setTimelineDragging(true);
-                    setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
-                  }}
-                  className={`rounded-lg border px-3 py-2 text-sm font-bold ${
-                    canSubmitTimeline
-                      ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
-                      : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
-                  }`}
-                  aria-label="Release year marker"
-                >
-                  Release year
-                </div>
-              </div>
-              <div
-                ref={timelineListRef}
-                className="mt-3 space-y-2"
-                role="list"
-                aria-label="Timeline entries"
-                onDragOver={(event) => {
-                  if (!canSubmitTimeline) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  if (event.currentTarget !== event.target) {
-                    return;
-                  }
-
-                  setTimelineHoverSlot(timelineEntries.length);
-                }}
-                onDrop={(event) => {
-                  if (!canSubmitTimeline) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  handleTimelineDrop(timelineHoverSlot ?? timelineEntries.length);
-                }}
-              >
-                {timelineEntries.map((entry, index) => (
-                  <div key={entry.id} className="space-y-2" role="listitem">
-                    {timelineDisplayInsertIndex === index ? (
-                      <div
-                        draggable={canSubmitTimeline && !timelineDragging}
-                        onDragStart={() => {
-                          if (!canSubmitTimeline) {
-                            return;
-                          }
-                          setTimelineDragging(true);
-                          setTimelineHoverSlot(index);
-                        }}
-                        onDragEnd={() => {
-                          setTimelineDragging(false);
-                          setTimelineHoverSlot(null);
-                        }}
-                        onTouchStart={(event) => {
-                          if (!canSubmitTimeline || event.touches.length === 0) {
-                            return;
-                          }
-
-                          event.preventDefault();
-                          setTimelineDragging(true);
-                          setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
-                        }}
-                        className={`rounded-lg border px-3 py-2 text-sm font-bold ${
-                          timelineDragging
-                            ? "border-dashed border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--primary)/0.05)] text-[hsl(var(--primary))]"
-                            : canSubmitTimeline
-                              ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
-                              : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
-                        }`}
-                      >
-                        Release year
-                      </div>
-                    ) : null}
-                    <div
-                      data-timeline-entry="true"
-                      onDragOver={(event) => handleTimelineItemDragOver(event, index)}
-                      className="rounded-lg border border-[hsl(var(--input))] bg-[hsl(var(--secondary)/0.55)] px-3 py-2 text-sm font-bold text-card-foreground"
-                    >
-                      {timelineEntryLabel(entry)}
-                    </div>
-                  </div>
-                ))}
-                {timelineDisplayInsertIndex === timelineEntries.length ? (
-                  <div
-                    draggable={canSubmitTimeline && !timelineDragging}
-                    onDragStart={() => {
-                      if (!canSubmitTimeline) {
-                        return;
-                      }
-                      setTimelineDragging(true);
-                      setTimelineHoverSlot(timelineEntries.length);
-                    }}
-                    onDragEnd={() => {
-                      setTimelineDragging(false);
-                      setTimelineHoverSlot(null);
-                    }}
-                    onTouchStart={(event) => {
-                      if (!canSubmitTimeline || event.touches.length === 0) {
-                        return;
-                      }
-
-                      event.preventDefault();
-                      setTimelineDragging(true);
-                      setTimelineHoverSlot(resolveTimelineInsertIndex(event.touches[0]!.clientY));
-                    }}
-                    className={`rounded-lg border px-3 py-2 text-sm font-bold ${
-                      timelineDragging
-                        ? "border-dashed border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--primary)/0.05)] text-[hsl(var(--primary))]"
-                        : canSubmitTimeline
-                          ? "cursor-grab border-[hsl(var(--primary)/0.3)] bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--primary))]"
-                          : "border-[hsl(var(--input))] bg-[hsl(var(--muted)/0.35)] text-muted-foreground"
-                    }`}
-                  >
-                    Release year
-                  </div>
-                ) : null}
-              </div>
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                Score 1 point for the correct song title and 1 point for the correct artist.
+              </p>
             </div>
               </>
             ) : null}

@@ -27,12 +27,10 @@ describe("game-engine scoring", () => {
     expect(phaseDurations.LISTEN).toBe(45_000);
   });
 
-  it("resolves fixed guess/year points plus speed bonus from guess lock time", () => {
+  it("awards 1 point each for correct title and artist", () => {
     const at = 1_000_000;
     const state = buildRunningState(at);
     const round = mockRounds[0]!;
-    const guessSubmittedAt = at + 5_000;
-    const timelineMovedAt = at + 44_000;
 
     const withSubmissions: RoomState = {
       ...state,
@@ -42,15 +40,7 @@ describe("game-engine scoring", () => {
           roundId: round.id,
           trackId: round.trackId,
           artistId: round.artistId,
-          submittedAt: guessSubmittedAt,
-        },
-      },
-      timelineSubmissions: {
-        [`p1:${round.id}`]: {
-          playerId: "p1",
-          roundId: round.id,
-          insertIndex: 2,
-          submittedAt: timelineMovedAt,
+          submittedAt: at + 5_000,
         },
       },
     };
@@ -61,51 +51,17 @@ describe("game-engine scoring", () => {
     expect(revealState.phase).toBe("REVEAL");
     expect(breakdown.guessCorrect.track).toBe(true);
     expect(breakdown.guessCorrect.artist).toBe(true);
-    expect(breakdown.timelineCorrect).toBe(true);
-    expect(breakdown.points.track).toBe(25);
-    expect(breakdown.points.artist).toBe(25);
-    expect(breakdown.points.timeline).toBe(25);
-    expect(breakdown.points.speed).toBe(23);
-    expect(breakdown.points.total).toBe(98);
-    expect(revealState.scores.p1).toBe(98);
-  });
-
-  it("does not award timeline points when placement is wrong", () => {
-    const at = 2_000_000;
-    const state = buildRunningState(at);
-    const round = mockRounds[0]!;
-
-    const withWrongTimeline: RoomState = {
-      ...state,
-      guessSubmissions: {
-        [`p1:${round.id}`]: {
-          playerId: "p1",
-          roundId: round.id,
-          trackId: round.trackId,
-          artistId: round.artistId,
-          submittedAt: at + 10_000,
-        },
-      },
-      timelineSubmissions: {
-        [`p1:${round.id}`]: {
-          playerId: "p1",
-          roundId: round.id,
-          insertIndex: 1,
-          submittedAt: at + 12_000,
-        },
-      },
-    };
-
-    const revealState = advanceRoomPhase(withWrongTimeline, withWrongTimeline.phaseEndsAt);
-    const breakdown = revealState.roundBreakdowns[round.id]!.players.p1!;
-
     expect(breakdown.timelineCorrect).toBe(false);
+    expect(breakdown.points.track).toBe(1);
+    expect(breakdown.points.artist).toBe(1);
     expect(breakdown.points.timeline).toBe(0);
-    expect(breakdown.points.speed).toBe(20);
+    expect(breakdown.points.speed).toBe(0);
+    expect(breakdown.points.total).toBe(2);
+    expect(revealState.scores.p1).toBe(2);
   });
 
-  it("awards no speed bonus unless both song and artist are correct", () => {
-    const at = 3_000_000;
+  it("awards the title point even when the artist guess is wrong", () => {
+    const at = 2_000_000;
     const state = buildRunningState(at);
     const round = mockRounds[0]!;
 
@@ -117,15 +73,7 @@ describe("game-engine scoring", () => {
           roundId: round.id,
           trackId: round.trackId,
           artistId: mockRounds[1]!.artistId,
-          submittedAt: at + 3_000,
-        },
-      },
-      timelineSubmissions: {
-        [`p1:${round.id}`]: {
-          playerId: "p1",
-          roundId: round.id,
-          insertIndex: 2,
-          submittedAt: at + 6_000,
+          submittedAt: at + 10_000,
         },
       },
     };
@@ -135,10 +83,41 @@ describe("game-engine scoring", () => {
 
     expect(breakdown.guessCorrect.track).toBe(true);
     expect(breakdown.guessCorrect.artist).toBe(false);
-    expect(breakdown.points.track).toBe(25);
-    expect(breakdown.points.artist).toBe(0);
-    expect(breakdown.points.timeline).toBe(25);
+    expect(breakdown.timelineCorrect).toBe(false);
+    expect(breakdown.points.timeline).toBe(0);
     expect(breakdown.points.speed).toBe(0);
-    expect(breakdown.points.total).toBe(50);
+    expect(breakdown.points.track).toBe(1);
+    expect(breakdown.points.artist).toBe(0);
+    expect(breakdown.points.total).toBe(1);
+  });
+
+  it("allows partial guesses with only the artist point", () => {
+    const at = 3_000_000;
+    const state = buildRunningState(at);
+    const round = mockRounds[0]!;
+
+    const withArtistOnly: RoomState = {
+      ...state,
+      guessSubmissions: {
+        [`p1:${round.id}`]: {
+          playerId: "p1",
+          roundId: round.id,
+          trackId: "",
+          artistId: round.artistId,
+          submittedAt: at + 3_000,
+        },
+      },
+    };
+
+    const revealState = advanceRoomPhase(withArtistOnly, withArtistOnly.phaseEndsAt);
+    const breakdown = revealState.roundBreakdowns[round.id]!.players.p1!;
+
+    expect(breakdown.guessCorrect.track).toBe(false);
+    expect(breakdown.guessCorrect.artist).toBe(true);
+    expect(breakdown.points.track).toBe(0);
+    expect(breakdown.points.artist).toBe(1);
+    expect(breakdown.points.timeline).toBe(0);
+    expect(breakdown.points.speed).toBe(0);
+    expect(breakdown.points.total).toBe(1);
   });
 });

@@ -184,11 +184,8 @@ function fallbackRounds(): RoomRound[] {
 }
 
 const scoringPoints = {
-  track: 25,
-  artist: 25,
-  timeline: 25,
-  speedBonusMax: 25,
-  speedBonusWindowSeconds: 45,
+  track: 1,
+  artist: 1,
 };
 
 function nowMs() {
@@ -571,27 +568,6 @@ function isTimelinePlacementCorrect(state: RoomState, round: RoomRound, insertIn
   return isTimelineInsertCorrect(entries, round.year, insertIndex);
 }
 
-function speedBonusPoints(
-  submittedAt: number | undefined,
-  phaseStartedAt: number,
-  phaseEndsAt: number,
-) {
-  if (!submittedAt) {
-    return 0;
-  }
-
-  const clampedAt = Math.max(phaseStartedAt, Math.min(submittedAt, phaseEndsAt));
-  const remainingMs = Math.max(0, phaseEndsAt - clampedAt);
-  const remainingSeconds = Math.ceil(remainingMs / 1_000);
-  return Math.max(
-    0,
-    Math.min(
-      scoringPoints.speedBonusMax,
-      Math.ceil((remainingSeconds / scoringPoints.speedBonusWindowSeconds) * scoringPoints.speedBonusMax),
-    ),
-  );
-}
-
 function ensureScoreKeys(state: RoomState) {
   const scores = { ...state.scores };
   for (const playerId of state.allowedPlayerIds) {
@@ -613,23 +589,11 @@ function resolveRoundIfNeeded(state: RoomState, at = nowMs()): RoomState {
 
   for (const playerId of state.allowedPlayerIds) {
     const guess = state.guessSubmissions[guessSubmissionKey(playerId, round.id)];
-    const timeline = state.timelineSubmissions[timelineSubmissionKey(playerId, round.id)];
-
     const trackCorrect = guess?.trackId === round.trackId;
     const artistCorrect = guess?.artistId === round.artistId;
-    const timelineCorrect =
-      typeof timeline?.insertIndex === "number"
-        ? isTimelinePlacementCorrect(state, round, timeline.insertIndex)
-        : false;
-    const songAndArtistCorrect = trackCorrect && artistCorrect;
-
     const trackPoints = trackCorrect ? scoringPoints.track : 0;
     const artistPoints = artistCorrect ? scoringPoints.artist : 0;
-    const timelinePoints = timelineCorrect ? scoringPoints.timeline : 0;
-    const speedPoints = songAndArtistCorrect
-      ? speedBonusPoints(guess?.submittedAt, state.phaseStartedAt, state.phaseEndsAt)
-      : 0;
-    const total = trackPoints + artistPoints + timelinePoints + speedPoints;
+    const total = trackPoints + artistPoints;
 
     scores[playerId] = (scores[playerId] ?? 0) + total;
     players[playerId] = {
@@ -638,12 +602,12 @@ function resolveRoundIfNeeded(state: RoomState, at = nowMs()): RoomState {
         track: trackCorrect,
         artist: artistCorrect,
       },
-      timelineCorrect,
+      timelineCorrect: false,
       points: {
         track: trackPoints,
         artist: artistPoints,
-        timeline: timelinePoints,
-        speed: speedPoints,
+        timeline: 0,
+        speed: 0,
         total,
       },
     };
@@ -674,17 +638,28 @@ function submitGuessInState(
   const roundId = submission.roundId.trim();
   const trackId = submission.trackId.trim();
   const artistId = submission.artistId.trim();
-  if (!playerId || !roundId || !trackId || !artistId) {
+  if (!playerId || !roundId) {
     return roomState;
   }
 
   const key = guessSubmissionKey(playerId, roundId);
-  if (roomState.guessSubmissions[key]) {
+  if (roomState.lifecycle === "running" && !roomState.allowedPlayerIds.includes(playerId)) {
     return roomState;
   }
 
-  if (roomState.lifecycle === "running" && !roomState.allowedPlayerIds.includes(playerId)) {
-    return roomState;
+  if (!trackId && !artistId) {
+    if (!roomState.guessSubmissions[key]) {
+      return roomState;
+    }
+
+    const nextGuessSubmissions = { ...roomState.guessSubmissions };
+    delete nextGuessSubmissions[key];
+
+    return {
+      ...roomState,
+      guessSubmissions: nextGuessSubmissions,
+      updatedAt: roomState.updatedAt,
+    };
   }
 
   return {

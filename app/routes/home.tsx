@@ -24,7 +24,7 @@ export default function Home() {
               <span className="home-brand-jam">Jam</span>
             </GameTitle>
           </div>
-          <GameSubtitle>Guess the song, name the artist, place the year. Play with friends!</GameSubtitle>
+          <GameSubtitle>Guess the song and name the artist. Play with friends!</GameSubtitle>
         </div>
 
         <div className="flex w-full flex-col gap-4">

@@ -1,6 +1,6 @@
 # ChronoJam
 
-ChronoJam is a multiplayer music party game. One player hosts the room, everyone else joins with a code, and players race to guess song title, artist, and release year.
+ChronoJam is a multiplayer music party game. One player hosts the room, everyone else joins with a code, and players race to guess the song title and artist.
 
 ## How It Works
 

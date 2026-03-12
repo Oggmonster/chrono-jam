@@ -795,17 +795,28 @@ export function upsertGuessSubmission(
   const roundId = submission.roundId.trim();
   const trackId = submission.trackId.trim();
   const artistId = submission.artistId.trim();
-  if (!playerId || !roundId || !trackId || !artistId) {
+  if (!playerId || !roundId) {
     return base;
   }
 
   const key = guessSubmissionKey(playerId, roundId);
-  if (base.guessSubmissions[key]) {
+  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(playerId)) {
     return base;
   }
 
-  if (base.lifecycle === "running" && !base.allowedPlayerIds.includes(playerId)) {
-    return base;
+  if (!trackId && !artistId) {
+    if (!base.guessSubmissions[key]) {
+      return base;
+    }
+
+    const nextGuessSubmissions = { ...base.guessSubmissions };
+    delete nextGuessSubmissions[key];
+
+    return setStoredRoomState(roomId, {
+      ...base,
+      guessSubmissions: nextGuessSubmissions,
+      updatedAt: nowMs(),
+    });
   }
 
   const nextState = {
