@@ -965,7 +965,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                             type="button"
                             role="option"
                             aria-selected={trackActiveSuggestionIndex === suggestionIndex}
-                            className={`w-full px-3 py-2 text-left text-sm font-semibold text-card-foreground hover:bg-[hsl(var(--muted)/0.5)] ${
+                            className={`w-full px-3 py-2 text-left hover:bg-[hsl(var(--muted)/0.5)] ${
                               trackActiveSuggestionIndex === suggestionIndex
                                 ? "bg-[hsl(var(--muted)/0.65)]"
                                 : ""
@@ -980,7 +980,10 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                               selectTrackSuggestion(suggestion);
                             }}
                           >
-                            {suggestion.display}
+                            <span className="block text-sm font-semibold text-card-foreground">{suggestion.display}</span>
+                            {suggestion.detail ? (
+                              <span className="block text-xs font-medium text-muted-foreground">{suggestion.detail}</span>
+                            ) : null}
                           </button>
                         </li>
                       ))}
@@ -992,7 +995,7 @@ export default function PlayGame({ params }: Route.ComponentProps) {
                 </div>
                 <p className="min-h-4 text-xs font-semibold text-muted-foreground">
                   {selectedTrack && !intermissionOpen
-                    ? `Selected title: ${selectedTrack.display}`
+                    ? `Selected title: ${selectedTrack.display}${selectedTrack.detail ? ` - ${selectedTrack.detail}` : ""}`
                     : displayedTrackQuery.trim().length >= 2
                       ? "Pick one suggestion to make this count."
                       : "Type and choose from the list."}

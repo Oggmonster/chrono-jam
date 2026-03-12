@@ -25,6 +25,17 @@ describe("buildAutocompleteIndex", () => {
     const index = buildAutocompleteIndex(entries);
     expect(index.items.map((item) => item.id)).toEqual(["artist-1", "artist-3"]);
   });
+
+  it("keeps duplicate normalized displays when explicitly allowed", () => {
+    const entries: AutocompleteEntry[] = [
+      { id: "track-1", display: "Drive", detail: "The Cars" },
+      { id: "track-2", display: "Drive", detail: "Incubus" },
+    ];
+
+    const index = buildAutocompleteIndex(entries, { dedupeNormalizedDisplay: false });
+    expect(index.items.map((item) => item.id)).toEqual(["track-1", "track-2"]);
+    expect(index.items.map((item) => item.detail)).toEqual(["The Cars", "Incubus"]);
+  });
 });
 
 describe("searchAutocomplete", () => {
@@ -42,5 +53,16 @@ describe("searchAutocomplete", () => {
 
     const week = searchAutocomplete(index, "week", 8);
     expect(week.map((item) => item.id)).toEqual(["4", "3"]);
+  });
+
+  it("returns duplicate title suggestions as separate track options", () => {
+    const entries: AutocompleteEntry[] = [
+      { id: "track-1", display: "Venus", detail: "Shocking Blue" },
+      { id: "track-2", display: "Venus", detail: "Bananarama" },
+    ];
+    const index = buildAutocompleteIndex(entries, { dedupeNormalizedDisplay: false });
+
+    const suggestions = searchAutocomplete(index, "ven");
+    expect(suggestions.map((item) => item.id)).toEqual(["track-2", "track-1"]);
   });
 });

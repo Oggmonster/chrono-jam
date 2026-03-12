@@ -1,11 +1,13 @@
 export type AutocompleteEntry = {
   id: string;
   display: string;
+  detail?: string;
 };
 
 export type AutocompleteItem = {
   id: string;
   display: string;
+  detail?: string;
   norm: string;
   tokens: string[];
 };
@@ -17,6 +19,10 @@ export type AutocompleteIndex = {
 
 const collapseWhitespace = /\s+/g;
 const nonAlphaNumeric = /[^a-z0-9\s]/g;
+
+type BuildAutocompleteIndexOptions = {
+  dedupeNormalizedDisplay?: boolean;
+};
 
 export function normalizeForAutocomplete(value: string) {
   return value
@@ -56,14 +62,18 @@ function addPrefix(prefixMap: Map<string, Set<number>>, token: string, itemIndex
   }
 }
 
-export function buildAutocompleteIndex(entries: AutocompleteEntry[]): AutocompleteIndex {
+export function buildAutocompleteIndex(
+  entries: AutocompleteEntry[],
+  { dedupeNormalizedDisplay = true }: BuildAutocompleteIndexOptions = {},
+): AutocompleteIndex {
   const seenIds = new Set<string>();
-  const seenNormDisplays = new Set<string>();
+  const seenNormDisplays = dedupeNormalizedDisplay ? new Set<string>() : null;
   const items: AutocompleteItem[] = [];
 
   for (const entry of entries) {
     const id = entry.id.trim();
     const display = entry.display.trim();
+    const detail = entry.detail?.trim();
     if (!id || !display || seenIds.has(id)) {
       continue;
     }
@@ -73,15 +83,16 @@ export function buildAutocompleteIndex(entries: AutocompleteEntry[]): Autocomple
       continue;
     }
 
-    if (seenNormDisplays.has(norm)) {
+    if (seenNormDisplays?.has(norm)) {
       continue;
     }
 
     seenIds.add(id);
-    seenNormDisplays.add(norm);
+    seenNormDisplays?.add(norm);
     items.push({
       id,
       display,
+      detail: detail && detail !== display ? detail : undefined,
       norm,
       tokens: tokenize(norm),
     });
@@ -167,7 +178,12 @@ export function searchAutocomplete(
       return a.rank - b.rank;
     }
 
-    return a.item.display.localeCompare(b.item.display);
+    const displayCompare = a.item.display.localeCompare(b.item.display);
+    if (displayCompare !== 0) {
+      return displayCompare;
+    }
+
+    return (a.item.detail ?? "").localeCompare(b.item.detail ?? "");
   });
 
   return ranked.slice(0, limit).map((entry) => entry.item);

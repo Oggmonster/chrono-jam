@@ -382,6 +382,10 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
       const rawTrackName = track.name.trim();
       const cleanedTrackName = cleanTrackTitle(rawTrackName);
       const trackName = cleanedTrackName || rawTrackName;
+      const artistList = Array.isArray(track.artists) ? track.artists : [];
+      const primaryArtist = artistList.find(
+        (artist) => typeof artist.id === "string" && artist.id.trim().length > 0 && artist.name.trim().length > 0,
+      );
       if (!trackId || !trackName) {
         continue;
       }
@@ -391,10 +395,10 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
         tracks.push({
           id: trackId,
           display: trackName,
+          detail: primaryArtist?.name.trim() || undefined,
         });
       }
 
-      const artistList = Array.isArray(track.artists) ? track.artists : [];
       for (const artist of artistList) {
         const artistId = artist.id?.trim() ?? "";
         const artistName = artist.name.trim();
@@ -416,9 +420,6 @@ async function fetchPlaylistCatalog(playlistId: string, candidates: TokenCandida
           ? await fetchOriginalReleaseYearByIsrc(track.external_ids?.isrc, candidates, isrcOriginalYearCache)
           : null;
       const releaseYear = originalReleaseYear ?? albumReleaseYear;
-      const primaryArtist = artistList.find(
-        (artist) => typeof artist.id === "string" && artist.id.trim().length > 0 && artist.name.trim().length > 0,
-      );
       if (!releaseYear || !primaryArtist) {
         continue;
       }

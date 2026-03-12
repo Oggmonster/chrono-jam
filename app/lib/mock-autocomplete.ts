@@ -51,6 +51,7 @@ export function buildMockAutocompletePack() {
   const roundTracks: AutocompleteEntry[] = mockRounds.map((round) => ({
     id: round.trackId,
     display: round.title,
+    detail: round.artist,
   }));
 
   const roundArtists: AutocompleteEntry[] = mockRounds.map((round) => ({
@@ -59,7 +60,7 @@ export function buildMockAutocompletePack() {
   }));
 
   return {
-    tracks: buildAutocompleteIndex([...roundTracks, ...baseTrackEntries]),
+    tracks: buildAutocompleteIndex([...roundTracks, ...baseTrackEntries], { dedupeNormalizedDisplay: false }),
     artists: buildAutocompleteIndex([...roundArtists, ...baseArtistEntries]),
   };
 }
